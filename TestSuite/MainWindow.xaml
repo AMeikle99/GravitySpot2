@@ -5,10 +5,18 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TestSuite"
         mc:Ignorable="d"
-        Title="Gravity Spot 2 - Test Suite" Height="768" Width="1024"
+        Title="Gravity Spot 2 - Test Suite"
         WindowState="Maximized" WindowStyle="None"
         Background="Black">
-    <Grid>
-        
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="TestingLabel" Text="Testing" Foreground="White" 
+                   FontSize="36" HorizontalAlignment="Right"
+                   Grid.Row="0"/>
+        <Viewbox Grid.Row="0" HorizontalAlignment="Center">
+            <Canvas x:Name="SkeletonGrid" Width="512" Height="414"/>
+        </Viewbox>
     </Grid>
 </Window>

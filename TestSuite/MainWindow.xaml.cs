@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -20,8 +21,43 @@ namespace TestSuite
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, INotifyPropertyChanged
     {
+
+        public string SpineBasePositionLabel
+            => SpineBasePosition == null
+                    ? "X: ? Y: ? Z: ?"
+                    : string.Format("X: {0} Y: {1} Z: {2}",
+                                    SpineBasePosition.X, SpineBasePosition.Y, SpineBasePosition.Z);
+        public int ActiveSkeletonIndex
+        {
+            get => activeSkeletonIndex;
+            set
+            {
+                if (activeSkeletonIndex != value)
+                {
+                    activeSkeletonIndex = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ActiveSkeletonIndex"));
+                }
+            }
+        }
+
+        private int activeSkeletonIndex = -1;
+
+        private CameraSpacePoint spineBasePosition;
+        private CameraSpacePoint SpineBasePosition
+        {
+            get => spineBasePosition;
+
+            set
+            {
+                if (!spineBasePosition.Equals(value))
+                {
+                    spineBasePosition = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("SpineBasePositionLabel"));
+                }
+            }
+        }
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -34,7 +70,9 @@ namespace TestSuite
             | FrameSourceTypes.Infrared
             | FrameSourceTypes.BodyIndex;
 
-        private IDictionary<int, List<Ellipse>> bodyHands;
+        private IDictionary<int, IDictionary<JointType, Ellipse>> bodyJoints;
+
+        public event PropertyChangedEventHandler PropertyChanged;
 
         public MainWindow()
         {
@@ -45,42 +83,19 @@ namespace TestSuite
 
             Loaded += MainWindow_Loaded;
 
-            bodyHands = new Dictionary<int, List<Ellipse>>();
-            
+            bodyJoints = new Dictionary<int, IDictionary<JointType, Ellipse>>();
 
             kinectSensor.Open();
 
             InitializeComponent();
+
+            DataContext = this;
         }
 
         #region WindowLifecycleEvents
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
-            {
-                Ellipse leftHand = new Ellipse()
-                {
-                    Fill = Brushes.Yellow,
-                    Height = 30,
-                    Width = 30,
-                    Visibility = Visibility.Collapsed
-                };
-                Ellipse rightHand = new Ellipse()
-                {
-                    Fill = Brushes.Yellow,
-                    Height = 30,
-                    Width = 30,
-                    Visibility = Visibility.Collapsed
-                };
-
-                List<Ellipse> hands = new List<Ellipse>();
-                hands.Add(leftHand);
-                hands.Add(rightHand);
-
-                bodyHands.Add(i, hands);
-                SkeletonGrid.Children.Add(leftHand);
-                SkeletonGrid.Children.Add(rightHand);
-            }
+            SetupSkeletonJoints();
         }
         #endregion
 
@@ -96,57 +111,97 @@ namespace TestSuite
 
             using (BodyFrame bodyFrame = multiSourceFrame.BodyFrameReference.AcquireFrame())
             {
-                Body[] bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
-
-                bodyFrame.GetAndRefreshBodyData(bodies);
-
-                for (int i = 0; i < bodies.Length; i++)
-                {
-                    Body body = bodies[i];
-                    Joint leftHand = body.Joints[JointType.HandLeft];
-                    Joint rightHand = body.Joints[JointType.HandRight];
-
-                    if (leftHand.Position.Z < 0)
-                    {
-                        leftHand.Position.Z = .1f;
-                    }
-
-                    if (rightHand.Position.Z < 0)
-                    {
-                        rightHand.Position.Z = .1f;
-                    }
-
-                    Ellipse leftHandEllipse = bodyHands[i][0];
-                    Ellipse rightHandEllipse = bodyHands[i][1];
-
-                    CameraSpacePoint[] handCameraPoints = { leftHand.Position, rightHand.Position };
-                    DepthSpacePoint[] handDepthPoints = new DepthSpacePoint[2];
-
-                    kinectSensor.CoordinateMapper.MapCameraPointsToDepthSpace(handCameraPoints, handDepthPoints);
-
-                    leftHandEllipse.Visibility = leftHand.TrackingState == TrackingState.NotTracked ?
-                                                        Visibility.Collapsed : Visibility.Visible;
-
-                    rightHandEllipse.Visibility = rightHand.TrackingState == TrackingState.NotTracked ?
-                                                        Visibility.Collapsed : Visibility.Visible;
-
-                    if (leftHand.TrackingState != TrackingState.NotTracked)
-                    {
-                        Point leftHandPoint = new Point(handDepthPoints[0].X, handDepthPoints[0].Y);
-                        Canvas.SetLeft(leftHandEllipse, leftHandPoint.X - leftHandEllipse.Width / 2);
-                        Canvas.SetTop(leftHandEllipse, leftHandPoint.Y - leftHandEllipse.Height / 2);
-
-
-                    }
-                    if (rightHand.TrackingState != TrackingState.NotTracked)
-                    {
-                        Point rightHandPoint = new Point(handDepthPoints[1].X, handDepthPoints[1].Y);
-                        Canvas.SetLeft(rightHandEllipse, rightHandPoint.X - rightHandEllipse.Width / 2);
-                        Canvas.SetTop(rightHandEllipse, rightHandPoint.Y - rightHandEllipse.Height / 2);
-                    }
-                }
+                RenderSkeletonJoints(bodyFrame);
             }
         }
+        #endregion
+
+        #region SkeletonRendering
+
+        private void SetupSkeletonJoints()
+        {
+            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
+            {
+                Dictionary<JointType, Ellipse> jointEllipseDict = new Dictionary<JointType, Ellipse>();
+
+                foreach (JointType joint in Enum.GetValues(typeof(JointType)))
+                {
+                    Ellipse jointEllipse = new Ellipse()
+                    {
+                        Fill = Brushes.White,
+                        Height = 10,
+                        Width = 10,
+                        Visibility = Visibility.Collapsed
+                    };
+
+                    if (joint == JointType.HandLeft || joint == JointType.HandRight)
+                    {
+                        jointEllipse.Fill = Brushes.Yellow;
+                        jointEllipse.Height = 20;
+                        jointEllipse.Width = 20;
+                    }
+
+                    jointEllipseDict.Add(joint, jointEllipse);
+                    SkeletonGrid.Children.Add(jointEllipse);
+                }
+
+                bodyJoints.Add(i, jointEllipseDict);
+            }
+        }
+
+        private void RenderSkeletonJoints(BodyFrame bodyFrame)
+        {
+            if (bodyFrame == null)
+            {
+                return;
+            }
+
+            Body[] bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
+
+            bodyFrame.GetAndRefreshBodyData(bodies);
+
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                Body body = bodies[i];
+                IDictionary<JointType, Ellipse> currentBodyJoints = bodyJoints[i];
+
+                foreach (var jointPair in body.Joints)
+                {
+                    JointType jointType = jointPair.Key;
+                    Joint joint = jointPair.Value;
+
+                    Ellipse jointEllipse = currentBodyJoints[jointType];
+
+                    joint.Position.Z = joint.Position.Z < 0 ? .1f : joint.Position.Z;
+
+                    DepthSpacePoint jointDepthPoint = kinectSensor.CoordinateMapper
+                                                        .MapCameraPointToDepthSpace(joint.Position);
+
+                    jointEllipse.Visibility = joint.TrackingState == TrackingState.NotTracked ?
+                                                Visibility.Collapsed : Visibility.Visible;
+
+                    if (joint.TrackingState != TrackingState.NotTracked)
+                    {
+                        Point jointPoint = new Point(jointDepthPoint.X, jointDepthPoint.Y);
+                        Canvas.SetLeft(jointEllipse, jointPoint.X - jointEllipse.Width / 2);
+                        Canvas.SetTop(jointEllipse, jointPoint.Y - jointEllipse.Height / 2);
+                    }
+
+                    if (body.IsTracked)
+                    {
+                        ActiveSkeletonIndex = i;
+
+                        if (joint.JointType == JointType.SpineBase)
+                        {
+                            SpineBasePosition = joint.Position;
+                        }
+                    }
+                    
+                }
+            }
+
+        }
+
         #endregion
     }
 }

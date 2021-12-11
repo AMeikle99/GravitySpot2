@@ -24,23 +24,39 @@ namespace TestSuite
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
 
-        public string SpineBasePositionLabel
-            => SpineBasePosition == null
-                    ? "X: ? Y: ? Z: ?"
-                    : string.Format("X: {0} Y: {1} Z: {2}",
-                                    SpineBasePosition.X, SpineBasePosition.Y, SpineBasePosition.Z);
-        public int ActiveSkeletonIndex
+        private List<(JointType, JointType)> JointBonePairs = new List<(JointType, JointType)>
         {
-            get => activeSkeletonIndex;
-            set
-            {
-                if (activeSkeletonIndex != value)
-                {
-                    activeSkeletonIndex = value;
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ActiveSkeletonIndex"));
-                }
-            }
-        }
+            (JointType.Head, JointType.Neck),
+            (JointType.Neck, JointType.SpineShoulder),
+            (JointType.SpineShoulder, JointType.ShoulderLeft),
+            (JointType.SpineShoulder, JointType.ShoulderRight),
+            
+            (JointType.ShoulderLeft, JointType.ElbowLeft),
+            (JointType.ElbowLeft, JointType.WristLeft),
+            (JointType.WristLeft, JointType.HandLeft),
+            (JointType.WristLeft, JointType.ThumbLeft),
+            (JointType.HandLeft, JointType.HandTipLeft),
+
+            (JointType.ShoulderRight, JointType.ElbowRight),
+            (JointType.ElbowRight, JointType.WristRight),
+            (JointType.WristRight, JointType.HandRight),
+            (JointType.WristRight, JointType.ThumbRight),
+            (JointType.HandRight, JointType.HandTipRight),
+
+            (JointType.SpineShoulder, JointType.SpineMid),
+            (JointType.SpineMid, JointType.SpineBase),
+            (JointType.SpineBase, JointType.HipLeft),
+            (JointType.SpineBase, JointType.HipRight),
+
+            (JointType.HipLeft, JointType.KneeLeft),
+            (JointType.KneeLeft, JointType.AnkleLeft),
+            (JointType.AnkleLeft, JointType.FootLeft),
+
+            (JointType.HipRight, JointType.KneeRight),
+            (JointType.KneeRight, JointType.AnkleRight),
+            (JointType.AnkleRight, JointType.FootRight)
+        };
+
 
         private int activeSkeletonIndex = -1;
 
@@ -71,6 +87,25 @@ namespace TestSuite
             | FrameSourceTypes.BodyIndex;
 
         private IDictionary<int, IDictionary<JointType, Ellipse>> bodyJoints;
+        private IDictionary<int, IDictionary<(JointType, JointType), Line>> bodyBones;
+
+        public string SpineBasePositionLabel
+            => SpineBasePosition == null
+                    ? "X: ? Y: ? Z: ?"
+                    : string.Format("X: {0} Y: {1} Z: {2}",
+                                    SpineBasePosition.X, SpineBasePosition.Y, SpineBasePosition.Z);
+        public int ActiveSkeletonIndex
+        {
+            get => activeSkeletonIndex;
+            set
+            {
+                if (activeSkeletonIndex != value)
+                {
+                    activeSkeletonIndex = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ActiveSkeletonIndex"));
+                }
+            }
+        }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -83,8 +118,6 @@ namespace TestSuite
 
             Loaded += MainWindow_Loaded;
 
-            bodyJoints = new Dictionary<int, IDictionary<JointType, Ellipse>>();
-
             kinectSensor.Open();
 
             InitializeComponent();
@@ -96,6 +129,7 @@ namespace TestSuite
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             SetupSkeletonJoints();
+            SetupSkeletonBones();
         }
         #endregion
 
@@ -111,7 +145,7 @@ namespace TestSuite
 
             using (BodyFrame bodyFrame = multiSourceFrame.BodyFrameReference.AcquireFrame())
             {
-                RenderSkeletonJoints(bodyFrame);
+                RenderSkeleton(bodyFrame);
             }
         }
         #endregion
@@ -120,6 +154,8 @@ namespace TestSuite
 
         private void SetupSkeletonJoints()
         {
+            bodyJoints = new Dictionary<int, IDictionary<JointType, Ellipse>>();
+
             for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
             {
                 Dictionary<JointType, Ellipse> jointEllipseDict = new Dictionary<JointType, Ellipse>();
@@ -134,13 +170,6 @@ namespace TestSuite
                         Visibility = Visibility.Collapsed
                     };
 
-                    if (joint == JointType.HandLeft || joint == JointType.HandRight)
-                    {
-                        jointEllipse.Fill = Brushes.Yellow;
-                        jointEllipse.Height = 20;
-                        jointEllipse.Width = 20;
-                    }
-
                     jointEllipseDict.Add(joint, jointEllipse);
                     SkeletonGrid.Children.Add(jointEllipse);
                 }
@@ -148,8 +177,30 @@ namespace TestSuite
                 bodyJoints.Add(i, jointEllipseDict);
             }
         }
+        private void SetupSkeletonBones()
+        {
+            bodyBones = new Dictionary<int, IDictionary<(JointType, JointType), Line>>();
 
-        private void RenderSkeletonJoints(BodyFrame bodyFrame)
+            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
+            {
+                IDictionary<(JointType, JointType), Line> jointBoneLines = new Dictionary<(JointType, JointType), Line>();
+                foreach(var jointPair in JointBonePairs)
+                {
+                    Line boneLine = new Line()
+                    {
+                        Stroke = Brushes.White,
+                        StrokeThickness = 4,
+                        Visibility = Visibility.Collapsed
+                    };
+
+                    jointBoneLines.Add(jointPair, boneLine);
+                    SkeletonGrid.Children.Add(boneLine);
+                }
+                bodyBones.Add(i, jointBoneLines);
+            }
+        }
+
+        private void RenderSkeleton(BodyFrame bodyFrame)
         {
             if (bodyFrame == null)
             {
@@ -160,6 +211,12 @@ namespace TestSuite
 
             bodyFrame.GetAndRefreshBodyData(bodies);
 
+            RenderSkeletonJoints(bodies);
+            RenderSkeletonBones(bodies);
+
+        }
+        private void RenderSkeletonJoints(Body[] bodies)
+        {
             for (int i = 0; i < bodies.Length; i++)
             {
                 Body body = bodies[i];
@@ -200,6 +257,42 @@ namespace TestSuite
                 }
             }
 
+        }
+
+        private void RenderSkeletonBones(Body[] bodies)
+        {
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                Body body = bodies[i];
+                IDictionary<(JointType, JointType), Line> currentBodyBones = bodyBones[i];
+
+                foreach (var jointPair in JointBonePairs)
+                {
+                    Line boneLine = currentBodyBones[jointPair];
+
+                    Joint start = body.Joints[jointPair.Item1];
+                    Joint end = body.Joints[jointPair.Item2];
+
+                    if (start.TrackingState == TrackingState.NotTracked || end.TrackingState == TrackingState.NotTracked)
+                    {
+                        boneLine.Visibility = Visibility.Collapsed;
+                        continue;
+                    }
+
+                    boneLine.Visibility = Visibility.Visible;
+
+                    start.Position.Z = start.Position.Z < 0 ? .1f : start.Position.Z;
+                    end.Position.Z = end.Position.Z < 0 ? .1f : end.Position.Z;
+
+                    DepthSpacePoint startPosition = kinectSensor.CoordinateMapper.MapCameraPointToDepthSpace(start.Position);
+                    DepthSpacePoint endPosition = kinectSensor.CoordinateMapper.MapCameraPointToDepthSpace(end.Position);
+
+                    boneLine.X1 = startPosition.X;
+                    boneLine.X2 = endPosition.X;
+                    boneLine.Y1 = startPosition.Y;
+                    boneLine.Y2 = endPosition.Y;
+                }
+            }
         }
 
         #endregion

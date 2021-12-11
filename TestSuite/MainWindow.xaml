@@ -12,16 +12,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <StackPanel Orientation="Vertical" Grid.Row="0">
-            <TextBlock x:Name="Body_Index" Foreground="White"
-                   FontSize="24" HorizontalAlignment="Left"
-                   Grid.Row="0" Text="{Binding ActiveSkeletonIndex, StringFormat={}BodyIndex: {0}}"/>
-            <TextBlock x:Name="SpineBaseLabel" Foreground="White"
-                   FontSize="24" HorizontalAlignment="Left"
-                   Grid.Row="0" Text="{Binding SpineBasePositionLabel}">
-            </TextBlock>
-        </StackPanel>
-
         <TextBlock x:Name="TestingLabel" Text="Testing" Foreground="White" 
                    FontSize="36" HorizontalAlignment="Right"
                    Grid.Row="0">

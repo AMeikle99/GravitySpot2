@@ -72,7 +72,12 @@ namespace TestSuite
         private Color jointColor;
         private Color boneColor;
 
-
+        /// <summary>
+        /// Instantiates a KinectSkeleton object which stores the Ellipse and Line objects that 
+        /// represent the Joints and Bones for the Skeleton
+        /// </summary>
+        /// <param name="jointColor">The color to render the Joints</param>
+        /// <param name="boneColor">The color to render the Bones</param>
         public KinectSkeleton(Color jointColor, Color boneColor)
         {
             this.jointColor = jointColor;
@@ -95,8 +100,8 @@ namespace TestSuite
             {
                 Ellipse jointEllipse = new Ellipse
                 {
-                    Width = 7,
-                    Height = 7,
+                    Width = 10,
+                    Height = 10,
                     Fill = new SolidColorBrush(jointColor),
                     Visibility = System.Windows.Visibility.Collapsed
                 };

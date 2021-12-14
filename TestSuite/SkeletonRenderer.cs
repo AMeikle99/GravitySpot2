@@ -66,12 +66,17 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Updates the rendering for each Skeleton. Adding new ones and removing ones out of view
+        /// </summary>
+        /// <param name="bodies">An array of Body objects, ideally from GetAndRefreshBodyData()</param>
         public void UpdateAllSkeletons(Body[] bodies)
         {
             for (int i = 0; i < bodies.Length; i++)
             {
                 Body body = bodies[i];
 
+                // Check if the current body is being tracked, update or clear as appropriate
                 if (body.IsTracked)
                 {
                     UpdateSkeleton(body, i);
@@ -83,11 +88,18 @@ namespace TestSuite
             }
         }
 
-        private void UpdateSkeleton(Body body, int skeltonIndex)
+        /// <summary>
+        /// Updates the rednering for one particular bodies' skeleton
+        /// </summary>
+        /// <param name="body">Body data for this skeleton, containing all the joints and their positions</param>
+        /// <param name="skeletonIndex">The index of the skeleton being updated</param>
+        private void UpdateSkeleton(Body body, int skeletonIndex)
         {
+            // Map the joint to the 2-D canvas point to render it at
             IDictionary<JointType, Point> jointRenderPoints = new Dictionary<JointType, Point>();
-            KinectSkeleton skeleton = skeletons[skeltonIndex];
+            KinectSkeleton skeleton = skeletons[skeletonIndex];
 
+            // Iterate through each available joint in the body, then render the visible/tracked ones
             foreach (var jointPair in body.Joints)
             {
                 JointType jointType = jointPair.Key;
@@ -96,13 +108,15 @@ namespace TestSuite
                 // Stop Z (depth) being negative to prevent +/- inf cases
                 joint.Position.Z = joint.Position.Z < 0 ? .1f : joint.Position.Z;
 
-                DepthSpacePoint jointDepthPoint = kinectSensor.CoordinateMapper
-                                                    .MapCameraPointToDepthSpace(joint.Position);
-                jointRenderPoints[jointType] = new Point { X = jointDepthPoint.X, Y = jointDepthPoint.Y };
+                // Render the Points in a 2-D 1920x1080 plane
+                ColorSpacePoint jointColorPoint = kinectSensor.CoordinateMapper
+                                                    .MapCameraPointToColorSpace(joint.Position);
+                jointRenderPoints[jointType] = new Point { X = jointColorPoint.X, Y = jointColorPoint.Y };
 
-                RenderJoint(skeleton.skeletonJoints[jointType], jointRenderPoints[jointType], joint);
+                RenderJoint(skeleton.skeletonJoints[jointType], jointRenderPoints[jointType]);
             }
 
+            // Iterate through each Bone (2 Joint Pair) and render the fully visible ones
             foreach (var boneJointPair in skeleton.BoneJointPairs)
             {
                 RenderBone(skeleton.skeletonBones[boneJointPair], body.Joints[boneJointPair.Item1], body.Joints[boneJointPair.Item2],
@@ -110,23 +124,35 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Remove the specified skeleton from the canvas
+        /// </summary>
+        /// <param name="skeletonIndex">The index of the skeleton that should be cleared</param>
         private void ClearSkeleton(int skeletonIndex)
         {
             KinectSkeleton skeleton = skeletons[skeletonIndex];
+
+            // Remove each bone from the canvas
             foreach (var bonePair in skeleton.BoneJointPairs)
             {
                 skeleton.skeletonBones[bonePair].Visibility = Visibility.Collapsed;
             }
 
+            // Remove each joint from the canvas
             foreach (var joint in skeleton.skeletonJoints)
             {
                 joint.Value.Visibility = Visibility.Collapsed;
             }
         }
 
-        private void RenderJoint(Ellipse jointEllipse, Point jointPoint, Joint jointInfo)
+        /// <summary>
+        /// Updates the Ellipse which represents a specific joint (Visibility and Position)
+        /// </summary>
+        /// <param name="jointEllipse">The Ellipse shape that represents the joint</param>
+        /// <param name="jointPoint">The point (in 2-D) to update the Ellipse with</param>
+        private void RenderJoint(Ellipse jointEllipse, Point jointPoint)
         {
-            if (jointInfo.TrackingState == TrackingState.NotTracked)
+            if (double.IsInfinity(jointPoint.X) || double.IsInfinity(jointPoint.Y))
             {
                 jointEllipse.Visibility = Visibility.Collapsed;
                 return;
@@ -137,9 +163,18 @@ namespace TestSuite
             Canvas.SetTop(jointEllipse, jointPoint.Y - jointEllipse.Height / 2);
         }
 
+        /// <summary>
+        /// Updates the Line which represents a specific bone
+        /// </summary>
+        /// <param name="boneLine">The Line shape which represents a bone</param>
+        /// <param name="start">The Joint where the bone originates</param>
+        /// <param name="end">The Joint where the bone terminates</param>
+        /// <param name="startPoint">Point for Joint 1 in the bone (where it originates)</param>
+        /// <param name="endPoint">Point for Joint 2 in the bone (where it terminates)</param>
         private void RenderBone(Line boneLine, Joint start, Joint end, Point startPoint, Point endPoint)
         {
-            if (start.TrackingState == TrackingState.NotTracked || end.TrackingState == TrackingState.NotTracked)
+            if (double.IsInfinity(startPoint.X) || double.IsInfinity(startPoint.Y) 
+                || double.IsInfinity(endPoint.X) || double.IsInfinity(endPoint.Y))
             {
                 boneLine.Visibility = Visibility.Collapsed;
                 return;
@@ -149,8 +184,10 @@ namespace TestSuite
 
             boneLine.X1 = startPoint.X;
             boneLine.X2 = endPoint.X;
+
             boneLine.Y1 = startPoint.Y;
             boneLine.Y2 = endPoint.Y;
         }
+
     }
 }

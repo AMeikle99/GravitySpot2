@@ -44,6 +44,8 @@ namespace TestSuite
         private GuidingMethod currentGuidingMethod;
         private Canvas canvas;
 
+        private Tuple<Point, bool>[] currentBodyPositions;
+
         // Renderable Objects for the Text Box Guiding Method
         private IDictionary<int, Tuple<Border, TextBlock>> textMethodRenderable;
 
@@ -105,6 +107,7 @@ namespace TestSuite
                         {
                             textRenderable.Item1.Visibility = Visibility.Collapsed;
                             textRenderable.Item2.Visibility = Visibility.Collapsed;
+                            currentBodyPositions[i] = new Tuple<Point, bool>(new Point(0,0),false);
                             continue;
                         }
 
@@ -121,6 +124,8 @@ namespace TestSuite
                             Point bodyPoint = new Point { X = trackingJoint.Position.X, Y = trackingJoint.Position.Z };
                             ColorSpacePoint trackingColorPoint = kinectSensor.CoordinateMapper
                                 .MapCameraPointToColorSpace(trackingJoint.Position);
+
+                            currentBodyPositions[i] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
 
                             Vector distanceVector = Point.Subtract(targetPoint, bodyPoint);
 
@@ -153,6 +158,32 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Debugging: Get the position of the body with the lowest index and is also tracked
+        /// </summary>
+        /// <returns>Tuple (index, point): the body index and tracking point</returns>
+        public Tuple<int, Point> PositionOfFirstTrackedBody()
+        {
+            Point trackedPosition = new Point(0,0);
+            int positionIndex = -1;
+
+            for (int i = 0; i < currentBodyPositions.Length; i++)
+            {
+                if (currentBodyPositions[i].Item2)
+                {
+                    trackedPosition = currentBodyPositions[i].Item1;
+                    positionIndex = i;
+                    break;
+                }
+            }
+
+            return new Tuple<int, Point>(positionIndex, trackedPosition);
+        }
+
+        /// <summary>
+        /// Clear the specified guiding method's renderables from the screen
+        /// </summary>
+        /// <param name="guidingMethod">The Guiding Method to be cleared</param>
         private void ClearGuidingMethod(GuidingMethod guidingMethod)
         {
             switch (guidingMethod)
@@ -177,9 +208,12 @@ namespace TestSuite
         {
             int bodyCount = kinectSensor.BodyFrameSource.BodyCount;
 
+            currentBodyPositions = new Tuple<Point, bool>[bodyCount];
+
             textMethodRenderable = new Dictionary<int, Tuple<Border, TextBlock>>();
             for (int i = 0; i < bodyCount; i++)
             {
+                currentBodyPositions[i] = new Tuple<Point, bool>(new Point(0, 0), false);
                 // --- Text Box Method ---
                 TextBlock textInstruction = new TextBlock
                 {

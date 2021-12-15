@@ -15,11 +15,12 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 
 using Microsoft.Kinect;
+using SharpDX.XInput;
 
 namespace TestSuite
 {
     /// <summary>
-    /// 
+    /// The Type of Representation for the User
     /// </summary>
     public enum RepresentationType
     {
@@ -30,7 +31,7 @@ namespace TestSuite
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window, INotifyPropertyChanged
+    public partial class MainWindow : Window, INotifyPropertyChanged, IUserControllerDelegate
     {
         // Constants related to Skeleton Tracking
         // Will also be used in calculating sensible random points
@@ -59,9 +60,56 @@ namespace TestSuite
 
         private RepresentationType currentUserRepresentation = DEFAULT_REPRESENTATION;
         private GuidingMethod currentGuidingMethod;
+
+        private Random rand = new Random();
+
+        private UserController[] controllers;
+
+        // Debugging
         private Point[] randomPoints;
         private Point randomPoint;
         private Point bodyPoint;
+        private UserIndex controllerIndex = UserIndex.Any;
+        private double controllerTime;
+        private double bodyFinalDistance;
+
+        public double BodyFinalDistance
+        {
+            get => bodyFinalDistance;
+            set
+            {
+                if (bodyFinalDistance != value)
+                {
+                    bodyFinalDistance = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyFinalDistance"));
+                }
+            }
+        }
+        public UserIndex ControllerIndex
+        {
+            get => controllerIndex;
+            set
+            {
+                if (controllerIndex != value)
+                {
+                    controllerIndex = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ControllerIndex"));
+                }
+            }
+        }
+
+        public double ControllerTime
+        {
+            get => controllerTime;
+            set
+            {
+                if (controllerTime != value)
+                {
+                    controllerTime = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ControllerTime"));
+                }
+            }
+        }
 
         public GuidingMethod CurrentGuidingMethod
         {
@@ -102,7 +150,11 @@ namespace TestSuite
         }
         public Point RandomPoint
         {
-            get => randomPoint;
+            get
+            {
+                int bodyIndex = guidingMethodRenderer.PositionOfFirstTrackedBody().Item1;
+                return bodyIndex == -1 ? new Point(0, 0) : randomPoints[bodyIndex];
+            }
             set
             {
                 if (!randomPoint.Equals(value))
@@ -124,6 +176,7 @@ namespace TestSuite
 
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyPoint"));
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyDistance"));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RandomPoint"));
                 }
             }
         }
@@ -148,6 +201,9 @@ namespace TestSuite
 
             int[] bodyRange = Enumerable.Range(0, kinectSensor.BodyFrameSource.BodyCount).ToArray();
             randomPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
+
+            UserIndex[] controllerRange = { UserIndex.One, UserIndex.Two, UserIndex.Three, UserIndex.Four};
+            controllers = controllerRange.Select(i => new UserController(i, this)).ToArray();
         }
 
         #region WindowEventHandlers
@@ -159,6 +215,8 @@ namespace TestSuite
             KeyDown += MainWindow_KeyDown;
         }
 
+        // Handles Key Presses to control the state of the experiment
+        // Can handle changing the representation and guiding method
         private void MainWindow_KeyDown(object sender, KeyEventArgs e)
         {
             // For Manual Debugging, Switch the User Representation/Guiding Method
@@ -187,6 +245,11 @@ namespace TestSuite
                     break;
                 case Key.D0:
                     CurrentUserRepresentation = RepresentationType.MirrorImage;
+                    break;
+
+                // Start User Timers
+                case Key.Space:
+                    StartTimers();
                     break;
                 default:
                     break;
@@ -237,6 +300,40 @@ namespace TestSuite
         }
         #endregion
 
+        #region IUserControllerDelegate
+        /// <summary>
+        /// Delegate Method to stop the timing for a specific controller/user
+        /// </summary>
+        /// <param name="controllerIndex">The index of the controller that the user interacted with</param>
+        /// <param name="elapsedTime">The time elapsed from starting to ending the user timer</param>
+        void IUserControllerDelegate.StopTiming(UserIndex controllerIndex, long elapsedTime)
+        {
+            // Store Controller Index and convert time to seconds, 2 d.p
+            ControllerIndex = controllerIndex;
+            ControllerTime = Math.Round(elapsedTime / 1000.0, 2);
+
+            Tuple<int, Point> firstTrackedBodyInfo = guidingMethodRenderer.PositionOfFirstTrackedBody();
+            if (firstTrackedBodyInfo.Item1 == -1) return;
+
+            Point targetPoint = randomPoints[firstTrackedBodyInfo.Item1];
+            Point bodyPoint = firstTrackedBodyInfo.Item2;
+
+            double finalDistance = GuidingMethodRenderer.DistanceBetweenPoints(bodyPoint, targetPoint);
+            BodyFinalDistance = Math.Round(finalDistance * 100, 2);
+        }
+
+        /// <summary>
+        /// Delegate Method to provide updated elapsed time for a specified controller index
+        /// </summary>
+        /// <param name="controllerIndex">The index of the controller</param>
+        /// <param name="elapsedTime">The current time elapsed</param>
+        void IUserControllerDelegate.UpdateTimeElapsed(UserIndex controllerIndex, long elapsedTime)
+        {
+            ControllerIndex = controllerIndex;
+            ControllerTime = Math.Round(elapsedTime / 1000.0, 2);
+        }
+        #endregion
+
         #region GuidingMethodRendering
         /// <summary>
         /// Renders the currently selected Guiding Method
@@ -248,6 +345,20 @@ namespace TestSuite
         }
         #endregion
 
+        #region TimerMethods
+        /// <summary>
+        /// For every controller, begin their timer
+        /// </summary>
+        private void StartTimers()
+        {
+            foreach (UserController controller in controllers)
+            {
+                controller.StartTiming();
+            }
+        }
+        #endregion
+
+        #region KinectHelperMethods
         /// <summary>
         /// Calculates the theoretical max sensor depth at a given depth
         /// </summary>
@@ -278,8 +389,6 @@ namespace TestSuite
         /// <returns>Point: Random 2D point in range of visible camera params (X, Z, both metres)</returns>
         private Point Random2DPointInCameraSpace()
         {
-            Random rand = new Random();
-
             double depthMinMaxDifference = MaxSkeletonDepth - MinSkeletonDepth;
             double Z = (rand.NextDouble() * depthMinMaxDifference) + MinSkeletonDepth;
             (double, double) widthRange = SensorWidthRange(Z);
@@ -290,7 +399,7 @@ namespace TestSuite
             // The 3-D Plane becomes a 2-D plane Horizontally (X) and Deep (Z)
             return new Point(X, Z);
         }
+        #endregion
 
-        
     }
 }

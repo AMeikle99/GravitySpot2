@@ -31,17 +31,39 @@
                 <TextBlock Text="(m)" FontSize="24" Foreground="White"/>
             </StackPanel>
         </StackPanel>
-        <StackPanel Orientation="Vertical" Grid.Row="0">
-            <TextBlock x:Name="TestingLabel" Text="Testing" Foreground="White" 
+        <StackPanel Orientation="Horizontal" Grid.Row="0" HorizontalAlignment="Right">
+            <StackPanel Orientation="Vertical" Margin="0 0 10 0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <TextBlock Text="Controller: " Foreground="White" FontSize="24"/>
+                    <TextBlock Text="{Binding ControllerIndex}"
+                           Foreground="White" FontSize="24"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <TextBlock Text="Time: " Foreground="White" FontSize="24"/>
+                    <TextBlock Text="{Binding ControllerTime, StringFormat={}{0:#,0.00}}" 
+                               Foreground="White" FontSize="24"/>
+                    <TextBlock Text="(s)" Foreground="White" FontSize="24"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <TextBlock Text="Distance: " Foreground="White" FontSize="24"/>
+                    <TextBlock Text="{Binding BodyFinalDistance, StringFormat={}{0:#,0.00}}" 
+                               Foreground="White" FontSize="24"/>
+                    <TextBlock Text="(cm)" Foreground="White" FontSize="24"/>
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Orientation="Vertical" Grid.Row="0">
+                <TextBlock x:Name="TestingLabel" Text="Testing" Foreground="White" 
                    FontSize="36" HorizontalAlignment="Right">
-            </TextBlock>
-            <TextBlock x:Name="GuidingMethodLabel" Foreground="White"
+                </TextBlock>
+                <TextBlock x:Name="GuidingMethodLabel" Foreground="White"
                        FontSize="24" HorizontalAlignment="Right"
                        Text="{Binding CurrentGuidingMethod}"/>
-            <TextBlock x:Name="RepresentationLabel" Foreground="White"
+                <TextBlock x:Name="RepresentationLabel" Foreground="White"
                        FontSize="24" HorizontalAlignment="Right"
                        Text="{Binding CurrentUserRepresentation}"/>
+            </StackPanel>
         </StackPanel>
+        
         <Viewbox Grid.Row="0" HorizontalAlignment="Center">
             <Canvas x:Name="SkeletonGrid" Width="1920" Height="1080"/>
         </Viewbox>

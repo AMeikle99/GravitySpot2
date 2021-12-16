@@ -73,6 +73,15 @@ namespace TestSuite
         private double controllerTime;
         private double bodyFinalDistance;
 
+        public double RotateAngle
+        {
+            get 
+            {
+                if (guidingMethodRenderer == null) return 0;
+                int bodyIndex = guidingMethodRenderer.PositionOfFirstTrackedBody().Item1;
+                return bodyIndex != -1 ? guidingMethodRenderer.rotateAngles[bodyIndex] : 0;
+            }
+        }
         public double BodyFinalDistance
         {
             get => bodyFinalDistance;
@@ -152,6 +161,7 @@ namespace TestSuite
         {
             get
             {
+                if (guidingMethodRenderer == null) return new Point(0, 0);
                 int bodyIndex = guidingMethodRenderer.PositionOfFirstTrackedBody().Item1;
                 return bodyIndex == -1 ? new Point(0, 0) : randomPoints[bodyIndex];
             }
@@ -177,6 +187,7 @@ namespace TestSuite
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyPoint"));
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyDistance"));
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RandomPoint"));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RotateAngle"));
                 }
             }
         }
@@ -197,7 +208,6 @@ namespace TestSuite
             InitializeComponent();
 
             DataContext = this;
-            RandomPoint = Random2DPointInCameraSpace();
 
             int[] bodyRange = Enumerable.Range(0, kinectSensor.BodyFrameSource.BodyCount).ToArray();
             randomPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
@@ -238,6 +248,9 @@ namespace TestSuite
                 case Key.D5:
                     CurrentGuidingMethod = GuidingMethod.VisualEffect;
                     break;
+                case Key.D6:
+                    CurrentGuidingMethod = GuidingMethod.None;
+                    break;
 
                 // Manually Switch User Representation
                 case Key.D9:
@@ -269,6 +282,8 @@ namespace TestSuite
 
             using (BodyFrame bodyFrame = multiSourceFrame.BodyFrameReference.AcquireFrame())
             {
+                if (bodyFrame == null) return;
+
                 Body[] bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
 
                 bodyFrame.GetAndRefreshBodyData(bodies);

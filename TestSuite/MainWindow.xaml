@@ -30,6 +30,10 @@
                 <TextBlock Text="{Binding BodyDistance}" FontSize="24" Foreground="White"/>
                 <TextBlock Text="(m)" FontSize="24" Foreground="White"/>
             </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Angle: " FontSize="24" Foreground="White"/>
+                <TextBlock Text="{Binding RotateAngle}" FontSize="24" Foreground="White"/>
+            </StackPanel>
         </StackPanel>
         <StackPanel Orientation="Horizontal" Grid.Row="0" HorizontalAlignment="Right">
             <StackPanel Orientation="Vertical" Margin="0 0 10 0">

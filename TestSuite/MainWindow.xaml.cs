@@ -36,7 +36,7 @@ namespace TestSuite
         // Constants related to Skeleton Tracking
         // Will also be used in calculating sensible random points
         private const double SensorFOV = 70.6 * Math.PI / 180;
-        private const double MinSkeletonDepth = 1.5;
+        private const double MinSkeletonDepth = 1.75;
         private const double MaxSkeletonDepth = 4;
 
         private const RepresentationType DEFAULT_REPRESENTATION = RepresentationType.Skeleton;
@@ -264,6 +264,11 @@ namespace TestSuite
                 case Key.Space:
                     StartTimers();
                     break;
+
+                // Exit Application
+                case Key.Q:
+                    App.Current.Shutdown();
+                    break;
                 default:
                     break;
             }
@@ -393,7 +398,7 @@ namespace TestSuite
         /// <returns>(MinCameraX, MaxCameraX) - The +/- range of X values at a given depth</returns>
         private (double, double) SensorWidthRange(double depth)
         {
-            double sensorWidth = MaxSensorWidth(depth);
+            double sensorWidth = 0.9 * MaxSensorWidth(depth);
 
             return (-sensorWidth / 2, sensorWidth / 2);
         }
@@ -407,7 +412,6 @@ namespace TestSuite
             double depthMinMaxDifference = MaxSkeletonDepth - MinSkeletonDepth;
             double Z = (rand.NextDouble() * depthMinMaxDifference) + MinSkeletonDepth;
             (double, double) widthRange = SensorWidthRange(Z);
-
 
             double X = (rand.NextDouble() * widthRange.Item2 * 2) + widthRange.Item1;
             // X (Horizontal), Y (Vertical), Z (Depth) Point => X, Z Point

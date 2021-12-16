@@ -55,6 +55,9 @@ namespace TestSuite
         private IDictionary<int, Tuple<Border, Image>> arrowMethodRenderable;
         private BitmapImage arrowOriginalImage;
 
+        // Renderable Objects for the Ellipse Guiding Method
+        private IDictionary<int, Ellipse> ellipseMethodRenderable;
+
         public double[] rotateAngles;
 
         /// <summary>
@@ -90,8 +93,9 @@ namespace TestSuite
         /// <param name="guidingMethod">The Guiding Method to be changed to</param>
         public void SetGuidingMethod(GuidingMethod guidingMethod)
         {
-            ClearGuidingMethod(currentGuidingMethod);
+            GuidingMethod prevGuidingMethod = currentGuidingMethod;
             currentGuidingMethod = guidingMethod;
+            HideAllGuidingMethods(prevGuidingMethod);
         }
 
         /// <summary>
@@ -114,7 +118,7 @@ namespace TestSuite
                 // If not being tracked then hide that body's guiding object
                 if (!body.IsTracked)
                 {
-                    HideGuidingMethod(i);
+                    HideGuidingMethod(currentGuidingMethod, i);
                     currentBodyPositions[i] = new Tuple<Point, bool>(new Point(0, 0), false);
                     continue;
                 }
@@ -128,6 +132,8 @@ namespace TestSuite
                 Joint renderGuideJoint = _renderGuideJoint ?? trackingJoint;
 
                 // Convert the joint camera position to one that can be rendered in 2D canvas
+                ColorSpacePoint trackingJointColorPoint = kinectSensor.CoordinateMapper
+                                            .MapCameraPointToColorSpace(trackingJoint.Position);
                 ColorSpacePoint guideJointColorPoint = kinectSensor.CoordinateMapper
                                             .MapCameraPointToColorSpace(renderGuideJoint.Position);
 
@@ -140,6 +146,8 @@ namespace TestSuite
                 // Get distance to Target in centimetres
                 int horizontalDistanceCM = (int)Math.Round(Math.Abs(moveToTargetVector.X * 100), 0);
                 int depthDistanceCM = (int)Math.Round(Math.Abs(moveToTargetVector.Y * 100), 0);
+
+                double scaleFactor = GuideScaleFactor(moveToTargetVector.Length);
 
                 switch (currentGuidingMethod)
                 {
@@ -190,15 +198,12 @@ namespace TestSuite
 
                         // Scale First
                         // Begins shrinking when 1m left and less
-                        double scaleFactor = Math.Log10(9 * moveToTargetVector.Length + 1);
-
-                        // Clamp to 0,1 range
-                        scaleFactor = Math.Max(0.0, Math.Min(scaleFactor, 1.0));
+                       
                         ScaleTransform arrowScaleTransform = new ScaleTransform(scaleFactor, scaleFactor,
                                                                     arrowRenderable.Width / 2, arrowRenderable.Height / 2);
 
                         // Then Rotate
-                        RotateTransform arrowRotateTransform = new RotateTransform(rotateAngle, arrowRenderable.Width / 2, 
+                        RotateTransform arrowRotateTransform = new RotateTransform(rotateAngle, arrowRenderable.Width / 2,
                                                                                                 arrowRenderable.Height / 2);
 
                         // Apply the transform to the arrow
@@ -210,6 +215,45 @@ namespace TestSuite
                         // Position the arrow to follow the User
                         Canvas.SetLeft(arrowBorder, guideJointColorPoint.X - arrowBorder.Width / 2);
                         Canvas.SetTop(arrowBorder, guideJointColorPoint.Y - arrowBorder.Height / 2);
+                        break;
+
+                    /// --- Render Ellipse Method ---
+                    case GuidingMethod.Ellipse:
+                        Ellipse ellipseRenderable = ellipseMethodRenderable[i];
+                        ellipseRenderable.Visibility = Visibility.Visible;
+
+                        JointType[] leftFootJointType = { JointType.FootLeft };
+                        JointType[] rightFootJointType = { JointType.FootRight };
+
+                        Joint? _leftFootJoint = GetTrackingJoint(body, leftFootJointType);
+                        Joint? _rightFootJoint = GetTrackingJoint(body, rightFootJointType);
+
+                        if (!_leftFootJoint.HasValue || !_rightFootJoint.HasValue) continue;
+
+                        // Extract the Joint for both feet, if one is null then rely on a single foot
+                        Joint leftFootJoint = _leftFootJoint.Value;
+                        Joint rightFootJoint = _rightFootJoint.Value;
+
+                        // Generate ColorSpace Poitn for both feet
+                        ColorSpacePoint leftFootColorPoint = kinectSensor.CoordinateMapper
+                                                                .MapCameraPointToColorSpace(leftFootJoint.Position);
+                        ColorSpacePoint rightFootColorPoint = kinectSensor.CoordinateMapper
+                                                                .MapCameraPointToColorSpace(rightFootJoint.Position);
+
+                        // Ellipse Center is Centered around the horixontal distance of spine (mid point roughly) and Height of Lowest Foot (incase one is being lifted)
+                        Point ellipseColorPoint = new Point { X = trackingJointColorPoint.X, Y = Math.Max(leftFootColorPoint.Y, rightFootColorPoint.Y) };
+
+                        if (double.IsInfinity(ellipseColorPoint.X) || double.IsInfinity(ellipseColorPoint.Y))
+                        {
+                            continue;
+                        }
+
+                        // Scale the ellipse to match the distance from target (no difference > 1m, smallest scale is 0.2)
+                        ScaleTransform ellipseScaleTransform = new ScaleTransform(scaleFactor, scaleFactor, ellipseRenderable.Width / 2, ellipseRenderable.Height / 2);
+                        ellipseRenderable.RenderTransform = ellipseScaleTransform;
+
+                        Canvas.SetLeft(ellipseRenderable, ellipseColorPoint.X - ellipseRenderable.Width / 2);
+                        Canvas.SetTop(ellipseRenderable, ellipseColorPoint.Y - ellipseRenderable.Height / 2);
                         break;
                     default:
                         break;
@@ -244,9 +288,9 @@ namespace TestSuite
         /// Hides the currently showing Guiding Method for the specified <paramref name="bodyIndex"/>
         /// </summary>
         /// <param name="bodyIndex">The index of the body to hide the guiding object</param>
-        private void HideGuidingMethod(int bodyIndex)
+        private void HideGuidingMethod(GuidingMethod guidingMethod, int bodyIndex)
         {
-            switch (currentGuidingMethod)
+            switch (guidingMethod)
             {
                 case GuidingMethod.TextBox:
                     Tuple<Border, TextBlock> textRenderable = textMethodRenderable[bodyIndex];
@@ -259,6 +303,10 @@ namespace TestSuite
                     arrowRenderable.Visibility = Visibility.Collapsed;
                     arrowBorder.Visibility = Visibility.Collapsed;
                     break;
+                case GuidingMethod.Ellipse:
+                    Ellipse ellipseRenderable = ellipseMethodRenderable[bodyIndex];
+                    ellipseRenderable.Visibility = Visibility.Collapsed;
+                    break;
                 default:
                     break;
             }
@@ -268,20 +316,11 @@ namespace TestSuite
         /// Clear the specified guiding method's renderables from the screen
         /// </summary>
         /// <param name="guidingMethod">The Guiding Method to be cleared</param>
-        private void ClearGuidingMethod(GuidingMethod guidingMethod)
+        private void HideAllGuidingMethods(GuidingMethod guidingMethod)
         {
-            switch (guidingMethod)
+            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
             {
-                case GuidingMethod.TextBox:
-                    foreach (var bodyMethodRender in textMethodRenderable)
-                    {
-                        Tuple<Border, TextBlock> textMethodObject = bodyMethodRender.Value;
-                        textMethodObject.Item1.Visibility = Visibility.Collapsed;
-                        textMethodObject.Item2.Visibility = Visibility.Collapsed;
-                    }
-                    break;
-                default:
-                    break;
+                HideGuidingMethod(guidingMethod, i);
             }
         }
 
@@ -298,6 +337,7 @@ namespace TestSuite
             textMethodRenderable = new Dictionary<int, Tuple<Border, TextBlock>>();
             arrowMethodRenderable = new Dictionary<int, Tuple<Border, Image>>();
             arrowOriginalImage = new BitmapImage(new Uri("Assets/arrow_guide.png", UriKind.Relative));
+            ellipseMethodRenderable = new Dictionary<int, Ellipse>();
 
             for (int i = 0; i < bodyCount; i++)
             {
@@ -308,11 +348,14 @@ namespace TestSuite
 
                 // --- Arrow Method ---
                 CreateArrowMethodRenderable(i);
+
+                // --- Ellipse Method ---
+                CreateEllipseMethodRenderable(i);
             }
         }
 
         /// <summary>
-        /// Create a Text Instruction Object for a specified bodyIndex
+        /// Create a Text Instruction Object for a specified <paramref name="bodyIndex"/>
         /// </summary>
         /// <param name="bodyIndex">The index of the body</param>
         private void CreateTextMethodRenderable(int bodyIndex)
@@ -375,6 +418,28 @@ namespace TestSuite
             arrowMethodRenderable.Add(bodyIndex, 
                 new Tuple<Border, Image>(bodyArrowBorder, bodyArrowImage));
         }
+
+        /// <summary>
+        /// Creates an Ellipse Guide Object for a specified <paramref name="bodyIndex"/>
+        /// </summary>
+        /// <param name="bodyIndex">The index of the specified body</param>
+        private void CreateEllipseMethodRenderable(int bodyIndex)
+        {
+            Ellipse ellipseGuide = new Ellipse
+            {
+                Fill = Brushes.WhiteSmoke,
+                Stroke = Brushes.Red,
+                Opacity = 0.4,
+                Width = 300,
+                Height = 200,
+                MaxWidth = 300,
+                MaxHeight = 200,
+                Visibility = Visibility.Collapsed
+            };
+
+            canvas.Children.Add(ellipseGuide);
+            ellipseMethodRenderable.Add(bodyIndex, ellipseGuide);
+        }
         #endregion
 
 
@@ -402,6 +467,23 @@ namespace TestSuite
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Using a scaling function, calculate the factor to scale a guide object by (based on distance to target)
+        /// </summary>
+        /// <param name="distanceToTarget">Distance of Current Point to Target Point (metres)</param>
+        /// <returns>ScaleFactor: 0.0 to 1.0</returns>
+        private double GuideScaleFactor(double distanceToTarget)
+        {
+            // S-Curve Function: From GravitySpot Paper (significantly most accurate)
+            // URL: https://doi.org/10.1145/2807442.2807490
+            double scaleFactor = (Math.Pow(2 * (distanceToTarget - 0.5), 7) + 2 * (distanceToTarget - 0.5) + 3.2) / 4;
+
+            // Clamp to 0,1 range
+            scaleFactor = Math.Max(0.0, Math.Min(scaleFactor, 1.0));
+
+            return scaleFactor;
         }
     }
 }

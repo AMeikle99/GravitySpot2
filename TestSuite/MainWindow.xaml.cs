@@ -25,7 +25,8 @@ namespace TestSuite
     public enum RepresentationType
     {
         Skeleton,
-        MirrorImage
+        MirrorImage,
+        None
     }
 
     /// <summary>
@@ -39,7 +40,7 @@ namespace TestSuite
         private const double MinSkeletonDepth = 1.75;
         private const double MaxSkeletonDepth = 4;
 
-        private const RepresentationType DEFAULT_REPRESENTATION = RepresentationType.Skeleton;
+        private const RepresentationType DEFAULT_REPRESENTATION = RepresentationType.None;
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -55,11 +56,13 @@ namespace TestSuite
 
         // Controls the rendering of the skeleton representation
         private SkeletonRenderer skeletonRenderer;
+        // Controls the rendering of the mirror image representation
+        private MirrorImageRenderer mirrorImageRenderer;
         // Controls rendering the different guiding techniques 
         private GuidingMethodRenderer guidingMethodRenderer;
 
         private RepresentationType currentUserRepresentation = DEFAULT_REPRESENTATION;
-        private GuidingMethod currentGuidingMethod;
+        private GuidingMethod currentGuidingMethod = GuidingMethod.None;
 
         private Random rand = new Random();
 
@@ -72,6 +75,20 @@ namespace TestSuite
         private UserIndex controllerIndex = UserIndex.Any;
         private double controllerTime;
         private double bodyFinalDistance;
+        private double tiltAngle;
+
+        public double TiltAngle
+        {
+            get => Math.Round(tiltAngle, 2);
+            set
+            {
+                if (tiltAngle != value)
+                {
+                    tiltAngle = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("TiltAngle"));
+                }
+            }
+        }
 
         public double RotateAngle
         {
@@ -142,6 +159,20 @@ namespace TestSuite
                 {
                     currentUserRepresentation = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentUserRepresentation"));
+
+                    switch (value)
+                    {
+                        case RepresentationType.Skeleton:
+                            mirrorImageRenderer.ClearAllMirrorImages();
+                            break;
+                        case RepresentationType.MirrorImage:
+                            skeletonRenderer.ClearAllSkeletons();
+                            break;
+                        case RepresentationType.None:
+                            mirrorImageRenderer.ClearAllMirrorImages();
+                            skeletonRenderer.ClearAllSkeletons();
+                            break;
+                    }
                 }
             }
         }
@@ -220,7 +251,8 @@ namespace TestSuite
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             skeletonRenderer = new SkeletonRenderer(kinectSensor, SkeletonGrid);
-            guidingMethodRenderer = new GuidingMethodRenderer(kinectSensor, SkeletonGrid);
+            mirrorImageRenderer = new MirrorImageRenderer(MirrorImage, kinectSensor);
+            guidingMethodRenderer = new GuidingMethodRenderer(kinectSensor, SkeletonGrid, EllipseGrid);
 
             KeyDown += MainWindow_KeyDown;
         }
@@ -253,11 +285,14 @@ namespace TestSuite
                     break;
 
                 // Manually Switch User Representation
-                case Key.D9:
+                case Key.D8:
                     CurrentUserRepresentation = RepresentationType.Skeleton;
                     break;
-                case Key.D0:
+                case Key.D9:
                     CurrentUserRepresentation = RepresentationType.MirrorImage;
+                    break;
+                case Key.D0:
+                    CurrentUserRepresentation = RepresentationType.None;
                     break;
 
                 // Start User Timers
@@ -267,7 +302,7 @@ namespace TestSuite
 
                 // Exit Application
                 case Key.Q:
-                    App.Current.Shutdown();
+                    Application.Current.Shutdown();
                     break;
                 default:
                     break;
@@ -279,6 +314,7 @@ namespace TestSuite
         private void MainWindow_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
             MultiSourceFrame multiSourceFrame = e.FrameReference.AcquireFrame();
+            Body[] bodies;
 
             if (multiSourceFrame == null)
             {
@@ -289,14 +325,30 @@ namespace TestSuite
             {
                 if (bodyFrame == null) return;
 
-                Body[] bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
+                Vector4 floorPlane = bodyFrame.FloorClipPlane;
+                TiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y) * 180 / Math.PI;
+
+                bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
 
                 bodyFrame.GetAndRefreshBodyData(bodies);
-
-                // Renders the Skeleton Representation and the Guiding Method currently selected
-                RenderSkeleton(bodies);
-                RenderGuidingMethod(bodies);
             }
+
+            switch (CurrentUserRepresentation)
+            {
+                case RepresentationType.Skeleton:
+                    // Renders the Skeleton Representation 
+                    RenderSkeleton(bodies);
+                    break;
+                case RepresentationType.MirrorImage:
+                    // Rendersthe Mirror Image Representation
+                    RenderMirrorImage(multiSourceFrame);
+                    break;
+                case RepresentationType.None:
+                    break;
+            }
+
+            // Render the Guiding Method currently selected
+            RenderGuidingMethod(bodies);
         }
         #endregion
 
@@ -317,6 +369,17 @@ namespace TestSuite
             }
 
             skeletonRenderer.UpdateAllSkeletons(bodies);
+        }
+        #endregion
+
+        #region MirrorImageRendering
+        /// <summary>
+        /// Renders the users as a Mirror Image Representation
+        /// </summary>
+        /// <param name="multiSourceFrame">The Multi Source Frame containing the frame data for color, infrared and body index</param>
+        private void RenderMirrorImage(MultiSourceFrame multiSourceFrame)
+        {
+            mirrorImageRenderer.UpdateAllMirrorImages(multiSourceFrame);
         }
         #endregion
 

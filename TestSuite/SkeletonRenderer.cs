@@ -26,7 +26,7 @@ namespace TestSuite
 
 
         /// <summary>
-        /// Instantiates a SkeletonRenderer, incharge of rendering correctly each skeleton's 
+        /// Instantiates a SkeletonRenderer, in charge of rendering correctly each skeleton's 
         /// joints and bones
         /// </summary>
         /// <param name="kinectSensor">A Kinect Sensor Object, to access data about the world</param>
@@ -85,6 +85,17 @@ namespace TestSuite
                 {
                     ClearSkeleton(i);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Removes all skeletons from the Canvas
+        /// </summary>
+        public void ClearAllSkeletons()
+        {
+            for (int i = 0; i < skeletons.Length; i++)
+            {
+                ClearSkeleton(i);
             }
         }
 

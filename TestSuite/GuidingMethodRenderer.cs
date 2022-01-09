@@ -40,11 +40,12 @@ namespace TestSuite
     internal class GuidingMethodRenderer
     {
         // Default Guiding Method to instantiate with, can be overriden and changed
-        public const GuidingMethod DEFAULT_GUIDING_METHOD = GuidingMethod.TextBox;
+        public const GuidingMethod DEFAULT_GUIDING_METHOD = GuidingMethod.None;
 
         private KinectSensor kinectSensor;
         private GuidingMethod currentGuidingMethod;
-        private Canvas canvas;
+        private Canvas overlayCanvas;
+        private Canvas underlayCanvas;
 
         private Tuple<Point, bool>[] currentBodyPositions;
 
@@ -76,12 +77,13 @@ namespace TestSuite
         /// Guiding Method
         /// </summary>
         /// <param name="kinectSensor">The Sensor for a Kinect Device</param>
-        /// <param name="drawableCanvas">The canvas to draw the Guiding Methods On</param>
+        /// <param name="overlayCanvas">The canvas to draw the Guiding Methods On</param>
         /// <param name="initialGuidingMethod">The Guiding Method to initialise with (Default: TextBox)</param>
-        public GuidingMethodRenderer(KinectSensor kinectSensor, Canvas drawableCanvas, GuidingMethod initialGuidingMethod = DEFAULT_GUIDING_METHOD)
+        public GuidingMethodRenderer(KinectSensor kinectSensor, Canvas overlayCanvas, Canvas underlayCanvas, GuidingMethod initialGuidingMethod = DEFAULT_GUIDING_METHOD)
         {
             this.kinectSensor = kinectSensor;
-            this.canvas = drawableCanvas;
+            this.overlayCanvas = overlayCanvas;
+            this.underlayCanvas = underlayCanvas;
             this.currentGuidingMethod = initialGuidingMethod;
 
             InitialiseMethodRenderables();
@@ -113,7 +115,7 @@ namespace TestSuite
                 // The possible joints to use for body tracking and rendering the guiding method object
                 JointType[] bodyPositionPossibleJoints = { JointType.SpineBase, JointType.SpineMid, JointType.SpineShoulder,
                                                     JointType.Neck, JointType.Head };
-                JointType[] renderGuidePossibleJoints = { JointType.Head, JointType.Neck };
+                JointType[] renderGuidePossibleJoints = { JointType.SpineShoulder, JointType.SpineMid };
 
                 // If not being tracked then hide that body's guiding object
                 if (!body.IsTracked)
@@ -376,7 +378,7 @@ namespace TestSuite
                 Visibility = Visibility.Collapsed
             };
 
-            canvas.Children.Add(textContainer);
+            overlayCanvas.Children.Add(textContainer);
             textMethodRenderable.Add(bodyIndex, new Tuple<Border, TextBlock>(textContainer, textInstruction));
         }
         
@@ -414,7 +416,7 @@ namespace TestSuite
                 Visibility = Visibility.Collapsed
             };
 
-            canvas.Children.Add(bodyArrowBorder);
+            overlayCanvas.Children.Add(bodyArrowBorder);
             arrowMethodRenderable.Add(bodyIndex, 
                 new Tuple<Border, Image>(bodyArrowBorder, bodyArrowImage));
         }
@@ -437,7 +439,7 @@ namespace TestSuite
                 Visibility = Visibility.Collapsed
             };
 
-            canvas.Children.Add(ellipseGuide);
+            underlayCanvas.Children.Add(ellipseGuide);
             ellipseMethodRenderable.Add(bodyIndex, ellipseGuide);
         }
         #endregion

@@ -10,9 +10,9 @@
         Background="Black">
     <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height=".15*"/>
+            <RowDefinition Height="0"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height=".15*"/>
+            <RowDefinition Height="0"/>
         </Grid.RowDefinitions>
         <StackPanel Orientation="Vertical" Grid.Row="1">
             <StackPanel Orientation="Horizontal">
@@ -35,6 +35,10 @@
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Angle: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding RotateAngle}" FontSize="24" Foreground="White"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Tilt Angle: " FontSize="24" Foreground="White"/>
+                <TextBlock Text="{Binding TiltAngle}" FontSize="24" Foreground="White"/>
             </StackPanel>
         </StackPanel>
         <StackPanel Orientation="Horizontal" Grid.Row="1" HorizontalAlignment="Right">
@@ -69,8 +73,12 @@
                        Text="{Binding CurrentUserRepresentation}"/>
             </StackPanel>
         </StackPanel>
-        
-        <Viewbox Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" >
+
+        <Viewbox Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Canvas x:Name="EllipseGrid" Width="1920" Height="1080"/>
+        </Viewbox>
+        <Image x:Name="MirrorImage" Stretch="Fill" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Width="1920" Height="1080"/>
+        <Viewbox Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Canvas x:Name="SkeletonGrid" Width="1920" Height="1080"/>
         </Viewbox>
     </Grid>

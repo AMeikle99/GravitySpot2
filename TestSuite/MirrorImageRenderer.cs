@@ -163,7 +163,7 @@ namespace TestSuite
         {
             bitmapImage.Lock();
             // Crop the "dead" zones at either side (where there is a mismatch between FOV of RGB and Depth Cameras)
-            CroppedBitmap croppedBitmap = new CroppedBitmap(bitmapImage, new Int32Rect(220, 0, bitmapImage.PixelWidth - 380, bitmapImage.PixelHeight));
+            CroppedBitmap croppedBitmap = new CroppedBitmap(bitmapImage, new Int32Rect(0, 0, bitmapImage.PixelWidth - 0, bitmapImage.PixelHeight));
             mirrorImageCanvas.Source = croppedBitmap;
             bitmapImage.Unlock();
         }

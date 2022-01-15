@@ -72,6 +72,7 @@ namespace TestSuite
         private Point[] randomPoints;
         private Point randomPoint;
         private Point bodyPoint;
+        private double bodyPointY;
         private UserIndex controllerIndex = UserIndex.Any;
         private double controllerTime;
         private double bodyFinalDistance;
@@ -158,6 +159,7 @@ namespace TestSuite
                 if (value != currentUserRepresentation)
                 {
                     currentUserRepresentation = value;
+                    guidingMethodRenderer.currentRepresentationType = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentUserRepresentation"));
 
                     switch (value)
@@ -203,6 +205,20 @@ namespace TestSuite
                     randomPoint = value;
 
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RandomPoint"));
+                }
+            }
+        }
+
+        public double BodyPointY
+        {
+            get => bodyPointY;
+            set
+            {
+                if (value != bodyPointY)
+                {
+                    bodyPointY = value;
+
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyPointY"));
                 }
             }
         }
@@ -253,6 +269,7 @@ namespace TestSuite
             skeletonRenderer = new SkeletonRenderer(kinectSensor, SkeletonGrid);
             mirrorImageRenderer = new MirrorImageRenderer(MirrorImage, kinectSensor);
             guidingMethodRenderer = new GuidingMethodRenderer(kinectSensor, SkeletonGrid, EllipseGrid);
+            skeletonRenderer.guiding = guidingMethodRenderer;
 
             KeyDown += MainWindow_KeyDown;
         }
@@ -295,6 +312,14 @@ namespace TestSuite
                     CurrentUserRepresentation = RepresentationType.None;
                     break;
 
+                // Debugging Adjustments
+                // Rotate Height Offset
+                case Key.H:
+                    string newHeightOffsetStr = (string)PromptDialog.Dialog.Prompt("Enter Height Offset: ", "New Height Offset");
+                    float newHeightOffset;
+                    if (float.TryParse(newHeightOffsetStr, out newHeightOffset)) guidingMethodRenderer.CameraHeightOffset = newHeightOffset;
+                    break;
+
                 // Start User Timers
                 case Key.Space:
                     StartTimers();
@@ -326,6 +351,8 @@ namespace TestSuite
                 if (bodyFrame == null) return;
 
                 Vector4 floorPlane = bodyFrame.FloorClipPlane;
+                guidingMethodRenderer.cameraFloorPlane = floorPlane;
+                guidingMethodRenderer.CameraTiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y);
                 TiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y) * 180 / Math.PI;
 
                 bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
@@ -365,7 +392,9 @@ namespace TestSuite
             {
                 Body firstBody = trackedBodies.First();
                 CameraSpacePoint bodyCameraPoint = firstBody.Joints[JointType.SpineBase].Position;
+                bodyCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(bodyCameraPoint);
                 BodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
+                BodyPointY = bodyCameraPoint.Y;
             }
 
             skeletonRenderer.UpdateAllSkeletons(bodies);

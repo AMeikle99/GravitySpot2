@@ -19,10 +19,22 @@ namespace TestSuite
     internal class SkeletonRenderer
     {
 
+        public static Color[] BodyColor =
+        {
+            Colors.Red,
+            Colors.Green,
+            Colors.DarkMagenta,
+            Colors.Blue,
+            Colors.Purple,
+            Colors.Orange
+        };
+
         private KinectSensor kinectSensor;
         private Canvas skeletonGrid;
 
         private KinectSkeleton[] skeletons;
+
+        public GuidingMethodRenderer guiding;
 
 
         /// <summary>
@@ -41,7 +53,7 @@ namespace TestSuite
 
             for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
             {
-                skeletons[i] = new KinectSkeleton(Colors.Red, Colors.White);
+                skeletons[i] = new KinectSkeleton(BodyColor[i], Colors.White);
             }
 
             SetupSkeletons();
@@ -121,7 +133,7 @@ namespace TestSuite
 
                 // Render the Points in a 2-D 1920x1080 plane
                 ColorSpacePoint jointColorPoint = kinectSensor.CoordinateMapper
-                                                    .MapCameraPointToColorSpace(joint.Position);
+                                                    .MapCameraPointToColorSpace(guiding.RotateCameraPointForTilt(joint.Position));
                 jointRenderPoints[jointType] = new Point { X = jointColorPoint.X, Y = jointColorPoint.Y };
 
                 RenderJoint(skeleton.skeletonJoints[jointType], jointRenderPoints[jointType]);

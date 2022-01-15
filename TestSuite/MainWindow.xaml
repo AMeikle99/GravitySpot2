@@ -24,6 +24,8 @@
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Body Point: X: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding BodyPoint.X}" FontSize="24" Foreground="White"/>
+                <TextBlock Text=" Y: " FontSize="24" Foreground="White"/>
+                <TextBlock Text="{Binding BodyPointY}" FontSize="24" Foreground="White"/>
                 <TextBlock Text=" Z: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding BodyPoint.Y}" FontSize="24" Foreground="White"/>
             </StackPanel>
@@ -77,7 +79,7 @@
         <Viewbox Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Canvas x:Name="EllipseGrid" Width="1920" Height="1080"/>
         </Viewbox>
-        <Image x:Name="MirrorImage" Stretch="Fill" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Width="1920" Height="1080"/>
+        <Image x:Name="MirrorImage" Stretch="Uniform" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         <Viewbox Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Canvas x:Name="SkeletonGrid" Width="1920" Height="1080"/>
         </Viewbox>

@@ -19,6 +19,16 @@ namespace TestSuite
     internal class SkeletonRenderer
     {
 
+        public static Color[] BodyColor =
+        {
+            Colors.Red,
+            Colors.Green,
+            Colors.DarkMagenta,
+            Colors.Blue,
+            Colors.Purple,
+            Colors.Orange
+        };
+
         private KinectSensor kinectSensor;
         private Canvas skeletonGrid;
 
@@ -41,7 +51,7 @@ namespace TestSuite
 
             for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
             {
-                skeletons[i] = new KinectSkeleton(Colors.Red, Colors.White);
+                skeletons[i] = new KinectSkeleton(BodyColor[i], Colors.White);
             }
 
             SetupSkeletons();

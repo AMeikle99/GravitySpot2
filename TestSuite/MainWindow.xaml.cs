@@ -72,6 +72,7 @@ namespace TestSuite
         private Point[] randomPoints;
         private Point randomPoint;
         private Point bodyPoint;
+        private double bodyPointY;
         private UserIndex controllerIndex = UserIndex.Any;
         private double controllerTime;
         private double bodyFinalDistance;
@@ -206,6 +207,20 @@ namespace TestSuite
                 }
             }
         }
+
+        public double BodyPointY
+        {
+            get => bodyPointY;
+            set
+            {
+                if (value != bodyPointY)
+                {
+                    bodyPointY = value;
+
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("BodyPointY"));
+                }
+            }
+        }
         public Point BodyPoint
         {
             get => bodyPoint;
@@ -327,6 +342,7 @@ namespace TestSuite
 
                 Vector4 floorPlane = bodyFrame.FloorClipPlane;
                 TiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y) * 180 / Math.PI;
+                guidingMethodRenderer.cameraFloorClipPlane = floorPlane;
 
                 bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
 
@@ -366,6 +382,7 @@ namespace TestSuite
                 Body firstBody = trackedBodies.First();
                 CameraSpacePoint bodyCameraPoint = firstBody.Joints[JointType.SpineBase].Position;
                 BodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
+                BodyPointY = bodyCameraPoint.Y;
             }
 
             skeletonRenderer.UpdateAllSkeletons(bodies);

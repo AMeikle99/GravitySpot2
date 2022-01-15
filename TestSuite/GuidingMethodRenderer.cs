@@ -3,13 +3,18 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
+using Vector = System.Windows.Vector;
+using Vector4 = Microsoft.Kinect.Vector4;
 
 namespace TestSuite
 {
@@ -37,6 +42,25 @@ namespace TestSuite
         Back
     }
 
+    /// <summary>
+    /// The corner of the frame, for the frame guiding method
+    /// </summary>
+    public enum FramePosition
+    {
+        Top,
+        Right,
+        Bottom,
+        Left,
+    }
+
+    public enum FrameCorner
+    {
+        TopLeft,
+        TopRight,
+        BottomRight,
+        BottomLeft
+    }
+
     internal class GuidingMethodRenderer
     {
         // Default Guiding Method to instantiate with, can be overriden and changed
@@ -59,7 +83,16 @@ namespace TestSuite
         // Renderable Objects for the Ellipse Guiding Method
         private IDictionary<int, Ellipse> ellipseMethodRenderable;
 
+        // The Frame Guiding Method
+        private IDictionary<int, IDictionary<FramePosition, Line>> frameMethodRenderable;
+        private IDictionary<int, IDictionary<FramePosition, IDictionary<FrameCorner, Vector>>> frameMethodOriginalRenderPositions;
+        private IDictionary<int, IDictionary<FrameCorner, CameraSpacePoint>> frameMethodOriginalCameraPositions;
+        private IDictionary<int, CameraSpacePoint> bodyTrackingPoint;
+        private IDictionary<int, bool> isShowingBodyFrame;
+        private bool updateBodyFrames = false;
+
         public double[] rotateAngles;
+        public Vector4 cameraFloorClipPlane;
 
         /// <summary>
         /// Calculates the distance between 2 points
@@ -96,8 +129,9 @@ namespace TestSuite
         public void SetGuidingMethod(GuidingMethod guidingMethod)
         {
             GuidingMethod prevGuidingMethod = currentGuidingMethod;
-            currentGuidingMethod = guidingMethod;
+            currentGuidingMethod = GuidingMethod.None;
             HideAllGuidingMethods(prevGuidingMethod);
+            currentGuidingMethod = guidingMethod;
         }
 
         /// <summary>
@@ -257,11 +291,108 @@ namespace TestSuite
                         Canvas.SetLeft(ellipseRenderable, ellipseColorPoint.X - ellipseRenderable.Width / 2);
                         Canvas.SetTop(ellipseRenderable, ellipseColorPoint.Y - ellipseRenderable.Height / 2);
                         break;
+
+                    // --- Render Frame Method ---
+                    case GuidingMethod.Framing:
+
+                        if (!isShowingBodyFrame[i])
+                        {
+                            InitialiseFrame(body, i, trackingJoint);
+                            updateBodyFrames = true;
+                        }
+                        break;
                     default:
                         break;
 
                 }
             }
+
+            if (updateBodyFrames && currentGuidingMethod == GuidingMethod.Framing)
+            {
+                updateBodyFrames = false;
+                UpdateFrameToTargetPosition(targetPoints);
+            }
+        }
+
+        private void InitialiseFrame(Body body, int bodyIndex, Joint trackingJoint)
+        {
+            float leftXPosition = float.MaxValue, rightXPosition = float.MinValue, topYPosition = float.MinValue, bottomYPosition = float.MaxValue;
+            JointType leftXJoint = JointType.SpineBase, rightXJoint = JointType.SpineBase, topYJoint = JointType.SpineBase, bottomYJoint = JointType.SpineBase;
+            IDictionary<FramePosition, Line> frameLines = frameMethodRenderable[bodyIndex];
+
+            foreach (var jointTypeJointPair in body.Joints)
+            {
+                JointType jointType = jointTypeJointPair.Key;
+                Joint joint = jointTypeJointPair.Value;
+
+                CameraSpacePoint jointPosition = joint.Position;
+                if (joint.TrackingState != TrackingState.NotTracked && !double.IsInfinity(jointPosition.X) && !double.IsInfinity(jointPosition.Y) && !double.IsInfinity(jointPosition.Z))
+                {
+                    if (jointPosition.X < leftXPosition)
+                    {
+                        leftXPosition = jointPosition.X;
+                        leftXJoint = jointType;
+                    }
+                    if (jointPosition.X > rightXPosition)
+                    {
+                        rightXPosition = jointPosition.X;
+                        rightXJoint = jointType;
+                    }
+                    if (jointPosition.Y > topYPosition)
+                    {
+                        topYPosition = jointPosition.Y;
+                        topYJoint = jointType;
+                    }
+                    if (jointPosition.Y < bottomYPosition)
+                    {
+                        bottomYPosition = jointPosition.Y;
+                        bottomYJoint = jointType;
+                    }
+                }
+            }
+
+            leftXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[leftXJoint].Position).X;
+            rightXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[rightXJoint].Position).X;
+            topYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[topYJoint].Position).Y;
+            bottomYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[bottomYJoint].Position).Y;
+
+            if (double.IsInfinity(leftXPosition) || double.IsInfinity(rightXPosition) || double.IsInfinity(topYPosition) || double.IsInfinity(bottomYPosition))
+            {
+                return;
+            }
+
+            Vector topLeftCorner = new Vector(leftXPosition, topYPosition);
+            Vector topRightCorner = new Vector(rightXPosition, topYPosition);
+            Vector bottomRightCorner = new Vector(rightXPosition, bottomYPosition);
+            Vector bottomLeftCorner = new Vector(leftXPosition, bottomYPosition);
+
+            Joint leftJoint = body.Joints[leftXJoint], rightJoint = body.Joints[rightXJoint], topJoint = body.Joints[topYJoint], bottomJoint = body.Joints[bottomYJoint];
+
+            CameraSpacePoint topLeftCameraPoint = new CameraSpacePoint { X = leftJoint.Position.X, Y = topJoint.Position.Y, Z = (topJoint.Position.Z + leftJoint.Position.Z) / 2 };
+            CameraSpacePoint topRightCameraPoint = new CameraSpacePoint { X = rightJoint.Position.X, Y = topJoint.Position.Y, Z = (topJoint.Position.Z + rightJoint.Position.Z) / 2 };
+            CameraSpacePoint bottomRightCameraPoint = new CameraSpacePoint { X = rightJoint.Position.X, Y = bottomJoint.Position.Y, Z = (bottomJoint.Position.Z + rightJoint.Position.Z) / 2 };
+            CameraSpacePoint bottomLeftCameraPoint = new CameraSpacePoint { X = leftJoint.Position.X, Y = bottomJoint.Position.Y, Z = (bottomJoint.Position.Z + leftJoint.Position.Z) / 2 };
+
+            frameMethodOriginalRenderPositions[bodyIndex] = new Dictionary<FramePosition, IDictionary<FrameCorner, Vector>>
+            {
+                { FramePosition.Top, new Dictionary<FrameCorner, Vector>{ { FrameCorner.TopLeft, topLeftCorner }, { FrameCorner.TopRight, topRightCorner }} },
+                { FramePosition.Right,  new Dictionary<FrameCorner, Vector>{ { FrameCorner.TopRight, topRightCorner }, { FrameCorner.BottomRight, bottomRightCorner }} },
+                { FramePosition.Bottom,  new Dictionary<FrameCorner, Vector>{ { FrameCorner.BottomRight, bottomRightCorner }, { FrameCorner.BottomLeft, bottomLeftCorner }} },
+                { FramePosition.Left,  new Dictionary<FrameCorner, Vector>{ { FrameCorner.BottomLeft, bottomLeftCorner }, { FrameCorner.TopLeft, topLeftCorner }} }
+            };
+
+            frameMethodOriginalCameraPositions[bodyIndex] = new Dictionary<FrameCorner, CameraSpacePoint>
+            {
+                { FrameCorner.TopLeft,topLeftCameraPoint },
+                { FrameCorner.TopRight, topRightCameraPoint },
+                { FrameCorner.BottomRight, bottomRightCameraPoint },
+                { FrameCorner.BottomLeft, bottomLeftCameraPoint },
+            };
+
+            bodyTrackingPoint[bodyIndex] = trackingJoint.Position;
+            isShowingBodyFrame[bodyIndex] = true;
+
+            UpdateFrameLines(frameLines, frameMethodOriginalRenderPositions[bodyIndex], Visibility.Visible, false, 0);
         }
 
         /// <summary>
@@ -309,6 +440,15 @@ namespace TestSuite
                     Ellipse ellipseRenderable = ellipseMethodRenderable[bodyIndex];
                     ellipseRenderable.Visibility = Visibility.Collapsed;
                     break;
+                case GuidingMethod.Framing:
+                    foreach (Line frameLine in frameMethodRenderable[bodyIndex].Values)
+                    {
+                        frameLine.Visibility = Visibility.Collapsed;
+                    }
+                    isShowingBodyFrame[bodyIndex] = false;
+                    frameMethodOriginalCameraPositions.Remove(bodyIndex);
+                    frameMethodOriginalRenderPositions.Remove(bodyIndex);
+                    break;
                 default:
                     break;
             }
@@ -323,6 +463,10 @@ namespace TestSuite
             for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
             {
                 HideGuidingMethod(guidingMethod, i);
+            }
+            if (guidingMethod == GuidingMethod.Framing)
+            {
+                updateBodyFrames = false;
             }
         }
 
@@ -340,6 +484,11 @@ namespace TestSuite
             arrowMethodRenderable = new Dictionary<int, Tuple<Border, Image>>();
             arrowOriginalImage = new BitmapImage(new Uri("Assets/arrow_guide.png", UriKind.Relative));
             ellipseMethodRenderable = new Dictionary<int, Ellipse>();
+            frameMethodRenderable = new Dictionary<int, IDictionary<FramePosition, Line>>();
+            frameMethodOriginalCameraPositions = new Dictionary<int, IDictionary<FrameCorner, CameraSpacePoint>>();
+            frameMethodOriginalRenderPositions = new Dictionary<int, IDictionary<FramePosition, IDictionary<FrameCorner, Vector>>>();
+            bodyTrackingPoint = new Dictionary<int, CameraSpacePoint>();
+            isShowingBodyFrame = new Dictionary<int, bool>();
 
             for (int i = 0; i < bodyCount; i++)
             {
@@ -353,6 +502,11 @@ namespace TestSuite
 
                 // --- Ellipse Method ---
                 CreateEllipseMethodRenderable(i);
+
+                // --- Frame Method ---
+                CreateFrameMethodRenderable(i);
+
+                isShowingBodyFrame.Add(i, false);
             }
         }
 
@@ -372,7 +526,7 @@ namespace TestSuite
             Border textContainer = new Border
             {
                 Background = Brushes.White,
-                BorderBrush = Brushes.Red,
+                BorderBrush = new SolidColorBrush(SkeletonRenderer.BodyColor[bodyIndex]),
                 BorderThickness = new Thickness(2),
                 Child = textInstruction,
                 Visibility = Visibility.Collapsed
@@ -406,7 +560,7 @@ namespace TestSuite
             Border bodyArrowBorder = new Border
             {
                 Background = Brushes.White,
-                BorderBrush = Brushes.Red,
+                BorderBrush = new SolidColorBrush(SkeletonRenderer.BodyColor[bodyIndex]),
                 BorderThickness = new Thickness(2),
                 Child = bodyArrowImage,
                 Width = bodyArrowImage.MaxWidth * 1.2,
@@ -430,7 +584,7 @@ namespace TestSuite
             Ellipse ellipseGuide = new Ellipse
             {
                 Fill = Brushes.WhiteSmoke,
-                Stroke = Brushes.Red,
+                Stroke = new SolidColorBrush(SkeletonRenderer.BodyColor[bodyIndex]),
                 Opacity = 0.4,
                 Width = 300,
                 Height = 200,
@@ -442,8 +596,174 @@ namespace TestSuite
             underlayCanvas.Children.Add(ellipseGuide);
             ellipseMethodRenderable.Add(bodyIndex, ellipseGuide);
         }
+
+        private void CreateFrameMethodRenderable(int bodyIndex)
+        {
+            IDictionary<FramePosition, Line> frameLines = new Dictionary<FramePosition, Line>();
+
+            foreach (FramePosition side in Enum.GetValues(typeof(FramePosition)))
+            {
+                Line frameLine = CreateFrameLine(SkeletonRenderer.BodyColor[bodyIndex]);
+                frameLines.Add(side, frameLine);
+                overlayCanvas.Children.Add(frameLine);
+            }
+
+            frameMethodRenderable.Add(bodyIndex, frameLines);
+        }
+
+        private Line CreateFrameLine(Color lineColor)
+        {
+            Line line = new Line
+            {
+                Fill = new SolidColorBrush(lineColor),
+                Stroke = new SolidColorBrush(lineColor),
+                StrokeThickness = 4,
+                Visibility = Visibility.Collapsed
+            };
+
+            return line;
+        }
         #endregion
 
+        private void UpdateFrameLines(IDictionary<FramePosition, Line> frameLines, IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> frameCorners, Visibility visibility, bool animated, double animationDelay)
+        {
+            foreach (var frameKVPair in frameLines)
+            {
+
+                UpdateFrameLine(frameKVPair.Value, frameCorners[frameKVPair.Key].ElementAt(0).Value, frameCorners[frameKVPair.Key].ElementAt(1).Value, animated, animationDelay, visibility);
+            }
+        }
+
+        private void UpdateFrameLine(Line frameLine, Vector start, Vector end, bool animated, double animationDelay, Visibility visibility = Visibility.Visible)
+        {
+            frameLine.Visibility = visibility;
+
+            if (animated)
+            {
+                double animationTime = 1000;
+
+                Storyboard sb = new Storyboard();
+
+                var daX1 = new DoubleAnimation(start.X, new Duration(TimeSpan.FromMilliseconds(animationTime)));
+                var daX2 = new DoubleAnimation(end.X, new Duration(TimeSpan.FromMilliseconds(animationTime)));
+                var daY1 = new DoubleAnimation(start.Y, new Duration(TimeSpan.FromMilliseconds(animationTime)));
+                var daY2 = new DoubleAnimation(end.Y, new Duration(TimeSpan.FromMilliseconds(animationTime)));
+
+                daX1.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
+                daX2.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
+                daY1.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
+                daY2.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
+
+                sb.Children.Add(daX1);
+                sb.Children.Add(daX2);
+                sb.Children.Add(daY1);
+                sb.Children.Add(daY2);
+
+                Storyboard.SetTarget(daX1, frameLine);
+                Storyboard.SetTarget(daX2, frameLine);
+                Storyboard.SetTarget(daY1, frameLine);
+                Storyboard.SetTarget(daY2, frameLine);
+
+                Storyboard.SetTargetProperty(daX1, new PropertyPath(Line.X1Property));
+                Storyboard.SetTargetProperty(daX2, new PropertyPath(Line.X2Property));
+                Storyboard.SetTargetProperty(daY1, new PropertyPath(Line.Y1Property));
+                Storyboard.SetTargetProperty(daY2, new PropertyPath(Line.Y2Property));
+
+                sb.Begin(overlayCanvas);
+            }
+            else
+            {
+                frameLine.X1 = start.X;
+                frameLine.X2 = end.X;
+                frameLine.Y1 = start.Y;
+                frameLine.Y2 = end.Y;
+            }
+
+        }
+
+        private void UpdateFrameToTargetPosition(Point[] targetPoints)
+        {
+            foreach (var originalCameraPointsKV in frameMethodOriginalCameraPositions)
+            {
+                int bodyIndex = originalCameraPointsKV.Key;
+                IDictionary<FrameCorner, CameraSpacePoint> originalCameraPoints = originalCameraPointsKV.Value;
+                IDictionary<FrameCorner, Vector> adjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
+                IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> targetFrameLinePoints = new Dictionary<FramePosition, IDictionary<FrameCorner, Vector>>();
+                Point targetPoint = targetPoints[bodyIndex];
+
+                CameraSpacePoint trackingPointInCameraSpace = bodyTrackingPoint[bodyIndex];
+                CameraSpacePoint targetPointInCameraSpace = new CameraSpacePoint { X = (float)targetPoint.X, Y = trackingPointInCameraSpace.Y, Z = (float)targetPoint.Y };
+
+                Vector3 trackingPointVector = new Vector3 { X = trackingPointInCameraSpace.X, Y = trackingPointInCameraSpace.Y, Z = trackingPointInCameraSpace.Z };               
+
+                Vector3 yNew = new Vector3(cameraFloorClipPlane.X, cameraFloorClipPlane.Y, cameraFloorClipPlane.Z);
+                Vector3 zNew = new Vector3(0, 1, -cameraFloorClipPlane.Y / cameraFloorClipPlane.Z);
+                zNew = Vector3.Normalize(zNew);
+
+                Vector3 xNew = Vector3.Cross(yNew, zNew);
+
+                Matrix4x4 rotation = new Matrix4x4(
+                    xNew.X, xNew.Y, xNew.Z, 0,
+                    yNew.X, yNew.Y, yNew.Z, 0,
+                    zNew.X, zNew.Y, zNew.Z, 0,
+                    0, 0, 0, 1);
+
+                trackingPointVector = Vector3.Transform(trackingPointVector, rotation);
+
+                Vector3 targetPointVector = new Vector3 { X = targetPointInCameraSpace.X, Y = targetPointInCameraSpace.Y, Z = targetPointInCameraSpace.Z };
+                Vector3 moveToTargetVectorCameraSpace = Vector3.Subtract(targetPointVector, trackingPointVector);
+
+                IDictionary<FrameCorner, Vector> tempAdjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
+                // Calculate adjusted corner points
+                foreach (FrameCorner frameCorner in Enum.GetValues(typeof(FrameCorner)))
+                {
+                    CameraSpacePoint originalCornerPoint = originalCameraPoints[frameCorner];
+                    Vector3 originalCornerVector = new Vector3 { X = originalCornerPoint.X, Y = originalCornerPoint.Y, Z = originalCornerPoint.Z };
+                    originalCornerVector = Vector3.Transform(originalCornerVector, rotation);
+
+                    Vector3 adjustedCornerVector = originalCornerVector + moveToTargetVectorCameraSpace;
+                    CameraSpacePoint adjustedCornerPoint = new CameraSpacePoint { X = adjustedCornerVector.X, Y = adjustedCornerVector.Y, Z = adjustedCornerVector.Z };
+
+                    ColorSpacePoint adjusterCornerPointColorSpace = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(adjustedCornerPoint);
+
+                    Vector adjustedCornerPointVector = new Vector { X = adjusterCornerPointColorSpace.X, Y = adjusterCornerPointColorSpace.Y };
+
+                    tempAdjustedCornerPoints[frameCorner] = adjustedCornerPointVector;
+                }
+
+                // Average out corner X/Y coordinates
+                double avgTopY = (tempAdjustedCornerPoints[FrameCorner.TopLeft].Y + tempAdjustedCornerPoints[FrameCorner.TopRight].Y) / 2;
+                double avgBottomY = (tempAdjustedCornerPoints[FrameCorner.BottomLeft].Y + tempAdjustedCornerPoints[FrameCorner.BottomRight].Y) / 2;
+                double avgLeftX = (tempAdjustedCornerPoints[FrameCorner.TopLeft].X + tempAdjustedCornerPoints[FrameCorner.BottomLeft].X) / 2;
+                double avgRightX = (tempAdjustedCornerPoints[FrameCorner.TopRight].X + tempAdjustedCornerPoints[FrameCorner.BottomRight].X) / 2;
+
+                adjustedCornerPoints[FrameCorner.TopLeft] = new Vector(avgLeftX, avgTopY);
+                adjustedCornerPoints[FrameCorner.TopRight] = new Vector(avgRightX, avgTopY);
+                adjustedCornerPoints[FrameCorner.BottomRight] = new Vector(avgRightX, avgBottomY);
+                adjustedCornerPoints[FrameCorner.BottomLeft] = new Vector(avgLeftX, avgBottomY);
+
+                foreach (var frameToCornerKV in frameMethodOriginalRenderPositions[bodyIndex])
+                {
+                    IDictionary<FrameCorner, Vector> lineCornerPoints = new Dictionary<FrameCorner, Vector>();
+                    foreach (var cornerToPointKV in frameToCornerKV.Value)
+                    {
+                        lineCornerPoints[cornerToPointKV.Key] = adjustedCornerPoints[cornerToPointKV.Key];
+                    }
+
+                    targetFrameLinePoints[frameToCornerKV.Key] = lineCornerPoints;
+                }
+
+                IDictionary<FramePosition, Line> frameLines = frameMethodRenderable[bodyIndex];
+                foreach (var frameCornerKV in targetFrameLinePoints)
+                {
+                    Line frameLine = frameLines[frameCornerKV.Key];
+                    Vector start = frameCornerKV.Value.ElementAt(0).Value;
+                    Vector end = frameCornerKV.Value.ElementAt(1).Value;
+
+                    UpdateFrameLine(frameLine, start, end, true, 1000, Visibility.Visible);
+                }
+            }
+        }
 
         /// <summary>
         /// Tries to get a Joint (down the spine) that can be used as a central reference point for a skeleton,

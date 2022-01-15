@@ -24,6 +24,8 @@
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Body Point: X: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding BodyPoint.X}" FontSize="24" Foreground="White"/>
+                <TextBlock Text=" Y: " FontSize="24" Foreground="White"/>
+                <TextBlock Text="{Binding BodyPointY}" FontSize="24" Foreground="White"/>
                 <TextBlock Text=" Z: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding BodyPoint.Y}" FontSize="24" Foreground="White"/>
             </StackPanel>

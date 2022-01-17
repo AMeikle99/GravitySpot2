@@ -34,6 +34,8 @@ namespace TestSuite
 
         private KinectSkeleton[] skeletons;
 
+        public GuidingMethodRenderer guiding;
+
 
         /// <summary>
         /// Instantiates a SkeletonRenderer, in charge of rendering correctly each skeleton's 
@@ -131,7 +133,7 @@ namespace TestSuite
 
                 // Render the Points in a 2-D 1920x1080 plane
                 ColorSpacePoint jointColorPoint = kinectSensor.CoordinateMapper
-                                                    .MapCameraPointToColorSpace(joint.Position);
+                                                    .MapCameraPointToColorSpace(guiding.RotateCameraPointForTilt(joint.Position));
                 jointRenderPoints[jointType] = new Point { X = jointColorPoint.X, Y = jointColorPoint.Y };
 
                 RenderJoint(skeleton.skeletonJoints[jointType], jointRenderPoints[jointType]);

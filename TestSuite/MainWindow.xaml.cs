@@ -159,6 +159,7 @@ namespace TestSuite
                 if (value != currentUserRepresentation)
                 {
                     currentUserRepresentation = value;
+                    guidingMethodRenderer.currentRepresentationType = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentUserRepresentation"));
 
                     switch (value)
@@ -268,6 +269,7 @@ namespace TestSuite
             skeletonRenderer = new SkeletonRenderer(kinectSensor, SkeletonGrid);
             mirrorImageRenderer = new MirrorImageRenderer(MirrorImage, kinectSensor);
             guidingMethodRenderer = new GuidingMethodRenderer(kinectSensor, SkeletonGrid, EllipseGrid);
+            skeletonRenderer.guiding = guidingMethodRenderer;
 
             KeyDown += MainWindow_KeyDown;
         }
@@ -341,8 +343,9 @@ namespace TestSuite
                 if (bodyFrame == null) return;
 
                 Vector4 floorPlane = bodyFrame.FloorClipPlane;
+                guidingMethodRenderer.cameraFloorPlane = floorPlane;
+                guidingMethodRenderer.CameraTiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y);
                 TiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y) * 180 / Math.PI;
-                guidingMethodRenderer.cameraFloorClipPlane = floorPlane;
 
                 bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
 
@@ -381,6 +384,7 @@ namespace TestSuite
             {
                 Body firstBody = trackedBodies.First();
                 CameraSpacePoint bodyCameraPoint = firstBody.Joints[JointType.SpineBase].Position;
+                bodyCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(bodyCameraPoint);
                 BodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
                 BodyPointY = bodyCameraPoint.Y;
             }

@@ -43,7 +43,7 @@ namespace TestSuite
     }
 
     /// <summary>
-    /// The corner of the frame, for the frame guiding method
+    /// The edge of the frame, for the frame guiding method
     /// </summary>
     public enum FramePosition
     {
@@ -53,6 +53,9 @@ namespace TestSuite
         Left,
     }
 
+    /// <summary>
+    /// The corner of the frame, for the frame guiding method
+    /// </summary>
     public enum FrameCorner
     {
         TopLeft,
@@ -90,9 +93,43 @@ namespace TestSuite
         private IDictionary<int, CameraSpacePoint> bodyTrackingPoint;
         private IDictionary<int, bool> isShowingBodyFrame;
         private bool updateBodyFrames = false;
+        private float FrameMargin
+        {
+            get => currentRepresentationType == RepresentationType.MirrorImage ? 50 : 0;
+        }
+
+        // The 3D rotation matrix, to adjust points for camera tilt
+        private Matrix4x4 pointRotationMatrix = new Matrix4x4();
+        private double cameraTiltAngle;
 
         public double[] rotateAngles;
-        public Vector4 cameraFloorClipPlane;
+        // The Plane Representing what the Camera thinks is the floor
+        public Vector4 cameraFloorPlane;
+
+        public RepresentationType currentRepresentationType = RepresentationType.None;
+        public double CameraTiltAngle
+        {
+            get => cameraTiltAngle;
+            set
+            {
+                if (value != cameraTiltAngle)
+                {
+                    cameraTiltAngle = value;
+
+                    float heightTranslation = cameraFloorPlane.W * 0.25f;
+
+                    Matrix4x4 rotationMatrix = new Matrix4x4(
+                        1, 0, 0, 0,
+                        0, (float)Math.Cos(CameraTiltAngle), -(float)Math.Sin(CameraTiltAngle), 0,
+                        0, (float)Math.Sin(CameraTiltAngle), (float)Math.Cos(CameraTiltAngle), 0,
+                        0, 0, 0, 1);
+
+                    rotationMatrix.Translation = new Vector3(0, heightTranslation, 0);
+
+                    pointRotationMatrix =  rotationMatrix;
+                }
+            }
+        }
 
         /// <summary>
         /// Calculates the distance between 2 points
@@ -167,11 +204,14 @@ namespace TestSuite
                 Joint trackingJoint = _trackingJoint.Value;
                 Joint renderGuideJoint = _renderGuideJoint ?? trackingJoint;
 
+                CameraSpacePoint trackingJointCameraPoint = RotateCameraPointForTilt(trackingJoint.Position);
+                CameraSpacePoint guideJointCameraPoint = RotateCameraPointForTilt(renderGuideJoint.Position);
+
                 // Convert the joint camera position to one that can be rendered in 2D canvas
                 ColorSpacePoint trackingJointColorPoint = kinectSensor.CoordinateMapper
-                                            .MapCameraPointToColorSpace(trackingJoint.Position);
+                                            .MapCameraPointToColorSpace(trackingJointCameraPoint);
                 ColorSpacePoint guideJointColorPoint = kinectSensor.CoordinateMapper
-                                            .MapCameraPointToColorSpace(renderGuideJoint.Position);
+                                            .MapCameraPointToColorSpace(guideJointCameraPoint);
 
                 Point bodyPoint = new Point { X = trackingJoint.Position.X, Y = trackingJoint.Position.Z };
                 currentBodyPositions[i] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
@@ -234,7 +274,6 @@ namespace TestSuite
 
                         // Scale First
                         // Begins shrinking when 1m left and less
-                       
                         ScaleTransform arrowScaleTransform = new ScaleTransform(scaleFactor, scaleFactor,
                                                                     arrowRenderable.Width / 2, arrowRenderable.Height / 2);
 
@@ -270,6 +309,9 @@ namespace TestSuite
                         Joint leftFootJoint = _leftFootJoint.Value;
                         Joint rightFootJoint = _rightFootJoint.Value;
 
+                        CameraSpacePoint leftFootCameraPoint = RotateCameraPointForTilt(leftFootJoint.Position);
+                        CameraSpacePoint rightFootCameraPoint = RotateCameraPointForTilt(rightFootJoint.Position);
+
                         // Generate ColorSpace Poitn for both feet
                         ColorSpacePoint leftFootColorPoint = kinectSensor.CoordinateMapper
                                                                 .MapCameraPointToColorSpace(leftFootJoint.Position);
@@ -294,7 +336,7 @@ namespace TestSuite
 
                     // --- Render Frame Method ---
                     case GuidingMethod.Framing:
-
+                        // If this body isn't currently being tracked, initialise to its current position
                         if (!isShowingBodyFrame[i])
                         {
                             InitialiseFrame(body, i, trackingJoint);
@@ -307,6 +349,7 @@ namespace TestSuite
                 }
             }
 
+            // If we have body frames we need to update and currently on the Framing Method
             if (updateBodyFrames && currentGuidingMethod == GuidingMethod.Framing)
             {
                 updateBodyFrames = false;
@@ -314,35 +357,47 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Sets the Framing method's Frame to encompass the User Body
+        /// </summary>
+        /// <param name="body">The object containing the details about a particular user's body</param>
+        /// <param name="bodyIndex">The index of the body</param>
+        /// <param name="trackingJoint">A joint that can be used as a single reference for the body position</param>
         private void InitialiseFrame(Body body, int bodyIndex, Joint trackingJoint)
         {
             float leftXPosition = float.MaxValue, rightXPosition = float.MinValue, topYPosition = float.MinValue, bottomYPosition = float.MaxValue;
             JointType leftXJoint = JointType.SpineBase, rightXJoint = JointType.SpineBase, topYJoint = JointType.SpineBase, bottomYJoint = JointType.SpineBase;
             IDictionary<FramePosition, Line> frameLines = frameMethodRenderable[bodyIndex];
 
+            // Iterate through each joint and find the X/Y coordinates that bound the body (Max/Min X/Y)
+            // i.e The Points of the horizontal/vertical joints
             foreach (var jointTypeJointPair in body.Joints)
             {
                 JointType jointType = jointTypeJointPair.Key;
                 Joint joint = jointTypeJointPair.Value;
 
-                CameraSpacePoint jointPosition = joint.Position;
+                CameraSpacePoint jointPosition = RotateCameraPointForTilt(joint.Position);
                 if (joint.TrackingState != TrackingState.NotTracked && !double.IsInfinity(jointPosition.X) && !double.IsInfinity(jointPosition.Y) && !double.IsInfinity(jointPosition.Z))
                 {
+                    // Check if the X coordinate is farther to the left than the current
                     if (jointPosition.X < leftXPosition)
                     {
                         leftXPosition = jointPosition.X;
                         leftXJoint = jointType;
                     }
+                    // Check if X Coordinate is farther to the right than the current
                     if (jointPosition.X > rightXPosition)
                     {
                         rightXPosition = jointPosition.X;
                         rightXJoint = jointType;
                     }
+                    // Check if the Y Coordinate is farther up than the current
                     if (jointPosition.Y > topYPosition)
                     {
                         topYPosition = jointPosition.Y;
                         topYJoint = jointType;
                     }
+                    // Check if the Y Coordinate is farther down then the current
                     if (jointPosition.Y < bottomYPosition)
                     {
                         bottomYPosition = jointPosition.Y;
@@ -351,28 +406,42 @@ namespace TestSuite
                 }
             }
 
-            leftXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[leftXJoint].Position).X;
-            rightXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[rightXJoint].Position).X;
-            topYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[topYJoint].Position).Y;
-            bottomYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(body.Joints[bottomYJoint].Position).Y;
+            // Extract and rotate the Point for each bounding joint
+            CameraSpacePoint leftJointPoint = RotateCameraPointForTilt(body.Joints[leftXJoint].Position);
+            CameraSpacePoint rightJointPoint = RotateCameraPointForTilt(body.Joints[rightXJoint].Position);
+            CameraSpacePoint topJointPoint = RotateCameraPointForTilt(body.Joints[topYJoint].Position);
+            CameraSpacePoint bottomJointPoint = RotateCameraPointForTilt(body.Joints[bottomYJoint].Position);
+            CameraSpacePoint trackingJointPoint = RotateCameraPointForTilt(trackingJoint.Position);
+
+            // Map each to the color space (for rendering)
+            leftXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(leftJointPoint).X;
+            rightXPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(rightJointPoint).X;
+            topYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(topJointPoint).Y;
+            bottomYPosition = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(bottomJointPoint).Y;
 
             if (double.IsInfinity(leftXPosition) || double.IsInfinity(rightXPosition) || double.IsInfinity(topYPosition) || double.IsInfinity(bottomYPosition))
             {
                 return;
             }
 
+            leftXPosition -= FrameMargin;
+            rightXPosition += FrameMargin;
+            topYPosition -= FrameMargin;
+            bottomYPosition += FrameMargin;
+
+            // Create Vector Points that represent each corner of the frame
             Vector topLeftCorner = new Vector(leftXPosition, topYPosition);
             Vector topRightCorner = new Vector(rightXPosition, topYPosition);
             Vector bottomRightCorner = new Vector(rightXPosition, bottomYPosition);
             Vector bottomLeftCorner = new Vector(leftXPosition, bottomYPosition);
 
-            Joint leftJoint = body.Joints[leftXJoint], rightJoint = body.Joints[rightXJoint], topJoint = body.Joints[topYJoint], bottomJoint = body.Joints[bottomYJoint];
+            // Create Camera Points, using tracking joint depth to represent whole body
+            CameraSpacePoint topLeftCameraPoint = new CameraSpacePoint { X = leftJointPoint.X, Y = topJointPoint.Y, Z = trackingJointPoint.Z };
+            CameraSpacePoint topRightCameraPoint = new CameraSpacePoint { X = rightJointPoint.X, Y = topJointPoint.Y, Z = trackingJointPoint.Z };
+            CameraSpacePoint bottomRightCameraPoint = new CameraSpacePoint { X = rightJointPoint.X, Y = bottomJointPoint.Y, Z = trackingJointPoint.Z };
+            CameraSpacePoint bottomLeftCameraPoint = new CameraSpacePoint { X = leftJointPoint.X, Y = bottomJointPoint.Y, Z = trackingJointPoint.Z };
 
-            CameraSpacePoint topLeftCameraPoint = new CameraSpacePoint { X = leftJoint.Position.X, Y = topJoint.Position.Y, Z = (topJoint.Position.Z + leftJoint.Position.Z) / 2 };
-            CameraSpacePoint topRightCameraPoint = new CameraSpacePoint { X = rightJoint.Position.X, Y = topJoint.Position.Y, Z = (topJoint.Position.Z + rightJoint.Position.Z) / 2 };
-            CameraSpacePoint bottomRightCameraPoint = new CameraSpacePoint { X = rightJoint.Position.X, Y = bottomJoint.Position.Y, Z = (bottomJoint.Position.Z + rightJoint.Position.Z) / 2 };
-            CameraSpacePoint bottomLeftCameraPoint = new CameraSpacePoint { X = leftJoint.Position.X, Y = bottomJoint.Position.Y, Z = (bottomJoint.Position.Z + leftJoint.Position.Z) / 2 };
-
+            // Store the mapping from Frame Side to the 2 Corners Points that form it
             frameMethodOriginalRenderPositions[bodyIndex] = new Dictionary<FramePosition, IDictionary<FrameCorner, Vector>>
             {
                 { FramePosition.Top, new Dictionary<FrameCorner, Vector>{ { FrameCorner.TopLeft, topLeftCorner }, { FrameCorner.TopRight, topRightCorner }} },
@@ -381,40 +450,127 @@ namespace TestSuite
                 { FramePosition.Left,  new Dictionary<FrameCorner, Vector>{ { FrameCorner.BottomLeft, bottomLeftCorner }, { FrameCorner.TopLeft, topLeftCorner }} }
             };
 
+            // Store the Camera Space Point that represents each frame corner
             frameMethodOriginalCameraPositions[bodyIndex] = new Dictionary<FrameCorner, CameraSpacePoint>
             {
-                { FrameCorner.TopLeft,topLeftCameraPoint },
+                { FrameCorner.TopLeft, topLeftCameraPoint },
                 { FrameCorner.TopRight, topRightCameraPoint },
                 { FrameCorner.BottomRight, bottomRightCameraPoint },
                 { FrameCorner.BottomLeft, bottomLeftCameraPoint },
             };
 
-            bodyTrackingPoint[bodyIndex] = trackingJoint.Position;
+            // Store the Reference/Tracking point for the body
+            bodyTrackingPoint[bodyIndex] = RotateCameraPointForTilt(trackingJoint.Position);
             isShowingBodyFrame[bodyIndex] = true;
 
-            UpdateFrameLines(frameLines, frameMethodOriginalRenderPositions[bodyIndex], Visibility.Visible, false, 0);
+            // Update the Rendering of the Frame Lines
+            UpdateFrameLines(frameLines, frameMethodOriginalRenderPositions[bodyIndex], Visibility.Visible, false);
         }
 
         /// <summary>
-        /// Debugging: Get the position of the body with the lowest index and is also tracked
+        /// Update the position of the Framing Method's Frames to the location of the Sweet Spot Target
         /// </summary>
-        /// <returns>Tuple (index, point): the body index and tracking point</returns>
-        public Tuple<int, Point> PositionOfFirstTrackedBody()
+        /// <param name="targetPoints">An array of Target Points, one for each user body</param>
+        private void UpdateFrameToTargetPosition(Point[] targetPoints)
         {
-            Point trackedPosition = new Point(0,0);
-            int positionIndex = -1;
-
-            for (int i = 0; i < currentBodyPositions.Length; i++)
+            // Iterate through Each body and the associated Frame Corner Positions
+            foreach (var originalCameraPointsKV in frameMethodOriginalCameraPositions)
             {
-                if (currentBodyPositions[i].Item2)
-                {
-                    trackedPosition = currentBodyPositions[i].Item1;
-                    positionIndex = i;
-                    break;
-                }
-            }
+                int bodyIndex = originalCameraPointsKV.Key;
+                IDictionary<FrameCorner, CameraSpacePoint> originalCameraPoints = originalCameraPointsKV.Value;
 
-            return new Tuple<int, Point>(positionIndex, trackedPosition);
+                IDictionary<FrameCorner, Vector> adjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
+                IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> targetFrameLinePoints = new Dictionary<FramePosition, IDictionary<FrameCorner, Vector>>();
+                Point targetPoint = targetPoints[bodyIndex];
+
+                CameraSpacePoint trackingPointInCameraSpace = bodyTrackingPoint[bodyIndex];
+                CameraSpacePoint targetPointInCameraSpace = new CameraSpacePoint { X = (float)targetPoint.X, Y = trackingPointInCameraSpace.Y, Z = (float)targetPoint.Y };
+
+                Vector3 trackingPointVector = new Vector3 { X = trackingPointInCameraSpace.X, Y = trackingPointInCameraSpace.Y, Z = trackingPointInCameraSpace.Z };
+
+                // Calculate the vector to adjust points using to move them towards the target position
+                Vector3 targetPointVector = new Vector3 { X = targetPointInCameraSpace.X, Y = targetPointInCameraSpace.Y, Z = targetPointInCameraSpace.Z };
+                Vector3 moveToTargetVectorCameraSpace = Vector3.Subtract(targetPointVector, trackingPointVector);
+
+                Vector3 topLeftVectorOrig = new Vector3(originalCameraPoints[FrameCorner.TopLeft].X, originalCameraPoints[FrameCorner.TopLeft].Y, originalCameraPoints[FrameCorner.TopLeft].Z);
+                Vector3 topRightVectorOrig = new Vector3(originalCameraPoints[FrameCorner.TopRight].X, originalCameraPoints[FrameCorner.TopRight].Y, originalCameraPoints[FrameCorner.TopRight].Z);
+                Vector3 bottomRightVectorOrig = new Vector3(originalCameraPoints[FrameCorner.BottomRight].X, originalCameraPoints[FrameCorner.BottomRight].Y, originalCameraPoints[FrameCorner.BottomRight].Z);
+                Vector3 bottomLeftVectorOrig = new Vector3(originalCameraPoints[FrameCorner.BottomLeft].X, originalCameraPoints[FrameCorner.BottomLeft].Y, originalCameraPoints[FrameCorner.BottomLeft].Z);
+
+                Vector3 topLeftOffset3D = trackingPointVector - topLeftVectorOrig;
+                Vector3 topRightOffset3D = trackingPointVector - topRightVectorOrig;
+                Vector3 bottomRightOffset3D = trackingPointVector - bottomRightVectorOrig;
+                Vector3 bottomLeftOffset3D = trackingPointVector - bottomLeftVectorOrig;
+
+                IDictionary<FrameCorner, Vector> tempAdjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
+                // Calculate adjusted corner points, in direction of the target point
+                foreach (FrameCorner frameCorner in Enum.GetValues(typeof(FrameCorner)))
+                {
+                    CameraSpacePoint originalCornerPoint = originalCameraPoints[frameCorner];
+                    Vector3 originalCornerVector = new Vector3 { X = originalCornerPoint.X, Y = originalCornerPoint.Y, Z = originalCornerPoint.Z };
+
+                    Vector3 cornerOffsetVector = new Vector3();
+
+                    switch (frameCorner)
+                    {
+                        case FrameCorner.TopLeft:
+                            cornerOffsetVector = topLeftOffset3D;
+                            break;
+                        case FrameCorner.TopRight:
+                            cornerOffsetVector = topRightOffset3D;
+                            break;
+                        case FrameCorner.BottomRight:
+                            cornerOffsetVector = bottomRightOffset3D;
+                            break;
+                        case FrameCorner.BottomLeft:
+                            cornerOffsetVector = bottomLeftOffset3D;
+                            break;
+                    }
+
+                    Vector3 adjustedCornerVector = originalCornerVector + cornerOffsetVector;
+
+                    CameraSpacePoint adjustedCornerPoint = new CameraSpacePoint { X = adjustedCornerVector.X, Y = adjustedCornerVector.Y, Z = adjustedCornerVector.Z };
+
+                    ColorSpacePoint adjusterCornerPointColorSpace = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(adjustedCornerPoint);
+
+                    Vector adjustedCornerPointVector = new Vector { X = adjusterCornerPointColorSpace.X, Y = adjusterCornerPointColorSpace.Y };
+
+                    tempAdjustedCornerPoints[frameCorner] = adjustedCornerPointVector;
+                }
+
+                // Average out corner X/Y coordinates
+                double avgTopY = (tempAdjustedCornerPoints[FrameCorner.TopLeft].Y + tempAdjustedCornerPoints[FrameCorner.TopRight].Y) / 2;
+                double avgBottomY = (tempAdjustedCornerPoints[FrameCorner.BottomLeft].Y + tempAdjustedCornerPoints[FrameCorner.BottomRight].Y) / 2;
+                double avgLeftX = (tempAdjustedCornerPoints[FrameCorner.TopLeft].X + tempAdjustedCornerPoints[FrameCorner.BottomLeft].X) / 2;
+                double avgRightX = (tempAdjustedCornerPoints[FrameCorner.TopRight].X + tempAdjustedCornerPoints[FrameCorner.BottomRight].X) / 2;
+
+                avgTopY -= FrameMargin;
+                avgBottomY -= FrameMargin;
+                avgLeftX -= FrameMargin;
+                avgRightX += FrameMargin;
+
+                adjustedCornerPoints[FrameCorner.TopLeft] = new Vector(avgLeftX, avgTopY);
+                adjustedCornerPoints[FrameCorner.TopRight] = new Vector(avgRightX, avgTopY);
+                adjustedCornerPoints[FrameCorner.BottomRight] = new Vector(avgRightX, avgBottomY);
+                adjustedCornerPoints[FrameCorner.BottomLeft] = new Vector(avgLeftX, avgBottomY);
+
+                foreach (var frameToCornerKV in frameMethodOriginalRenderPositions[bodyIndex])
+                {
+                    // For each fram side line, get the points for start/end position
+                    IDictionary<FrameCorner, Vector> lineCornerPoints = new Dictionary<FrameCorner, Vector>();
+                    foreach (var cornerToPointKV in frameToCornerKV.Value)
+                    {
+                        lineCornerPoints[cornerToPointKV.Key] = adjustedCornerPoints[cornerToPointKV.Key];
+                    }
+
+                    // Store that lines corner points
+                    targetFrameLinePoints[frameToCornerKV.Key] = lineCornerPoints;
+                }
+
+                // Update the rendering of each frame line
+                IDictionary<FramePosition, Line> frameLines = frameMethodRenderable[bodyIndex];
+                UpdateFrameLines(frameLines, targetFrameLinePoints, Visibility.Visible, true);
+            }
         }
 
         /// <summary>
@@ -596,7 +752,13 @@ namespace TestSuite
             underlayCanvas.Children.Add(ellipseGuide);
             ellipseMethodRenderable.Add(bodyIndex, ellipseGuide);
         }
+        #endregion
 
+        #region FrameMethodRenderables
+        /// <summary>
+        /// Creates the 4 Frame Lines for a specified <paramref name="bodyIndex"/>
+        /// </summary>
+        /// <param name="bodyIndex"></param>
         private void CreateFrameMethodRenderable(int bodyIndex)
         {
             IDictionary<FramePosition, Line> frameLines = new Dictionary<FramePosition, Line>();
@@ -611,6 +773,11 @@ namespace TestSuite
             frameMethodRenderable.Add(bodyIndex, frameLines);
         }
 
+        /// <summary>
+        /// Creates a Frame Line in a specified colour
+        /// </summary>
+        /// <param name="lineColor">The colour the line should be</param>
+        /// <returns>A bound line that will be used in the Framing Method </returns>
         private Line CreateFrameLine(Color lineColor)
         {
             Line line = new Line
@@ -623,47 +790,67 @@ namespace TestSuite
 
             return line;
         }
-        #endregion
 
-        private void UpdateFrameLines(IDictionary<FramePosition, Line> frameLines, IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> frameCorners, Visibility visibility, bool animated, double animationDelay)
+        /// <summary>
+        /// Updatess multiple lines in a Bounding Frame
+        /// </summary>
+        /// <param name="frameLines">Dictionary mapping Frame Side to the Line object</param>
+        /// <param name="frameCorners">Dictionary mapping the Frame Side to the Corners and Points</param>
+        /// <param name="visibility">Whether the Lines should be visible or not</param>
+        /// <param name="animated">True if the update should happen in an animated fashion. False, otherwise</param>
+        private void UpdateFrameLines(IDictionary<FramePosition, Line> frameLines, IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> frameCorners, Visibility visibility, bool animated)
         {
             foreach (var frameKVPair in frameLines)
             {
-
-                UpdateFrameLine(frameKVPair.Value, frameCorners[frameKVPair.Key].ElementAt(0).Value, frameCorners[frameKVPair.Key].ElementAt(1).Value, animated, animationDelay, visibility);
+                UpdateFrameLine(frameKVPair.Value, frameCorners[frameKVPair.Key].ElementAt(0).Value, frameCorners[frameKVPair.Key].ElementAt(1).Value, animated, visibility);
             }
         }
 
-        private void UpdateFrameLine(Line frameLine, Vector start, Vector end, bool animated, double animationDelay, Visibility visibility = Visibility.Visible)
+        /// <summary>
+        /// Update a single Frame Bounding Line Rendering
+        /// </summary>
+        /// <param name="frameLine">The frame line to be updated</param>
+        /// <param name="start">The new Start Position</param>
+        /// <param name="end">The new End Position</param>
+        /// <param name="animated">Whether the Line should be visible or not</param>
+        /// <param name="visibility">True if the update should happen in an animated fashion. False, otherwise</param>
+        private void UpdateFrameLine(Line frameLine, Vector start, Vector end, bool animated, Visibility visibility = Visibility.Visible)
         {
             frameLine.Visibility = visibility;
 
             if (animated)
             {
+                // How long the animation time should be
                 double animationTime = 1000;
+                // How long to delay the start of the animation
+                double animationStartDelay = 1000;
 
                 Storyboard sb = new Storyboard();
 
+                // Animation for each of the Start/End's X/Y Coordinates
                 var daX1 = new DoubleAnimation(start.X, new Duration(TimeSpan.FromMilliseconds(animationTime)));
                 var daX2 = new DoubleAnimation(end.X, new Duration(TimeSpan.FromMilliseconds(animationTime)));
                 var daY1 = new DoubleAnimation(start.Y, new Duration(TimeSpan.FromMilliseconds(animationTime)));
                 var daY2 = new DoubleAnimation(end.Y, new Duration(TimeSpan.FromMilliseconds(animationTime)));
 
-                daX1.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
-                daX2.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
-                daY1.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
-                daY2.BeginTime = TimeSpan.FromMilliseconds(animationDelay);
+                // Set the Begin Delay time
+                daX1.BeginTime = TimeSpan.FromMilliseconds(animationStartDelay);
+                daX2.BeginTime = TimeSpan.FromMilliseconds(animationStartDelay);
+                daY1.BeginTime = TimeSpan.FromMilliseconds(animationStartDelay);
+                daY2.BeginTime = TimeSpan.FromMilliseconds(animationStartDelay);
 
                 sb.Children.Add(daX1);
                 sb.Children.Add(daX2);
                 sb.Children.Add(daY1);
                 sb.Children.Add(daY2);
 
+                // Assign the animation targets to the frame line
                 Storyboard.SetTarget(daX1, frameLine);
                 Storyboard.SetTarget(daX2, frameLine);
                 Storyboard.SetTarget(daY1, frameLine);
                 Storyboard.SetTarget(daY2, frameLine);
 
+                // Set which Named Property the animation belongs to
                 Storyboard.SetTargetProperty(daX1, new PropertyPath(Line.X1Property));
                 Storyboard.SetTargetProperty(daX2, new PropertyPath(Line.X2Property));
                 Storyboard.SetTargetProperty(daY1, new PropertyPath(Line.Y1Property));
@@ -678,91 +865,29 @@ namespace TestSuite
                 frameLine.Y1 = start.Y;
                 frameLine.Y2 = end.Y;
             }
-
         }
+        #endregion
 
-        private void UpdateFrameToTargetPosition(Point[] targetPoints)
+        /// <summary>
+        /// Debugging: Get the position of the body with the lowest index and is also tracked
+        /// </summary>
+        /// <returns>Tuple (index, point): the body index and tracking point</returns>
+        public Tuple<int, Point> PositionOfFirstTrackedBody()
         {
-            foreach (var originalCameraPointsKV in frameMethodOriginalCameraPositions)
+            Point trackedPosition = new Point(0, 0);
+            int positionIndex = -1;
+
+            for (int i = 0; i < currentBodyPositions.Length; i++)
             {
-                int bodyIndex = originalCameraPointsKV.Key;
-                IDictionary<FrameCorner, CameraSpacePoint> originalCameraPoints = originalCameraPointsKV.Value;
-                IDictionary<FrameCorner, Vector> adjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
-                IDictionary<FramePosition, IDictionary<FrameCorner, Vector>> targetFrameLinePoints = new Dictionary<FramePosition, IDictionary<FrameCorner, Vector>>();
-                Point targetPoint = targetPoints[bodyIndex];
-
-                CameraSpacePoint trackingPointInCameraSpace = bodyTrackingPoint[bodyIndex];
-                CameraSpacePoint targetPointInCameraSpace = new CameraSpacePoint { X = (float)targetPoint.X, Y = trackingPointInCameraSpace.Y, Z = (float)targetPoint.Y };
-
-                Vector3 trackingPointVector = new Vector3 { X = trackingPointInCameraSpace.X, Y = trackingPointInCameraSpace.Y, Z = trackingPointInCameraSpace.Z };               
-
-                Vector3 yNew = new Vector3(cameraFloorClipPlane.X, cameraFloorClipPlane.Y, cameraFloorClipPlane.Z);
-                Vector3 zNew = new Vector3(0, 1, -cameraFloorClipPlane.Y / cameraFloorClipPlane.Z);
-                zNew = Vector3.Normalize(zNew);
-
-                Vector3 xNew = Vector3.Cross(yNew, zNew);
-
-                Matrix4x4 rotation = new Matrix4x4(
-                    xNew.X, xNew.Y, xNew.Z, 0,
-                    yNew.X, yNew.Y, yNew.Z, 0,
-                    zNew.X, zNew.Y, zNew.Z, 0,
-                    0, 0, 0, 1);
-
-                trackingPointVector = Vector3.Transform(trackingPointVector, rotation);
-
-                Vector3 targetPointVector = new Vector3 { X = targetPointInCameraSpace.X, Y = targetPointInCameraSpace.Y, Z = targetPointInCameraSpace.Z };
-                Vector3 moveToTargetVectorCameraSpace = Vector3.Subtract(targetPointVector, trackingPointVector);
-
-                IDictionary<FrameCorner, Vector> tempAdjustedCornerPoints = new Dictionary<FrameCorner, Vector>();
-                // Calculate adjusted corner points
-                foreach (FrameCorner frameCorner in Enum.GetValues(typeof(FrameCorner)))
+                if (currentBodyPositions[i].Item2)
                 {
-                    CameraSpacePoint originalCornerPoint = originalCameraPoints[frameCorner];
-                    Vector3 originalCornerVector = new Vector3 { X = originalCornerPoint.X, Y = originalCornerPoint.Y, Z = originalCornerPoint.Z };
-                    originalCornerVector = Vector3.Transform(originalCornerVector, rotation);
-
-                    Vector3 adjustedCornerVector = originalCornerVector + moveToTargetVectorCameraSpace;
-                    CameraSpacePoint adjustedCornerPoint = new CameraSpacePoint { X = adjustedCornerVector.X, Y = adjustedCornerVector.Y, Z = adjustedCornerVector.Z };
-
-                    ColorSpacePoint adjusterCornerPointColorSpace = kinectSensor.CoordinateMapper.MapCameraPointToColorSpace(adjustedCornerPoint);
-
-                    Vector adjustedCornerPointVector = new Vector { X = adjusterCornerPointColorSpace.X, Y = adjusterCornerPointColorSpace.Y };
-
-                    tempAdjustedCornerPoints[frameCorner] = adjustedCornerPointVector;
-                }
-
-                // Average out corner X/Y coordinates
-                double avgTopY = (tempAdjustedCornerPoints[FrameCorner.TopLeft].Y + tempAdjustedCornerPoints[FrameCorner.TopRight].Y) / 2;
-                double avgBottomY = (tempAdjustedCornerPoints[FrameCorner.BottomLeft].Y + tempAdjustedCornerPoints[FrameCorner.BottomRight].Y) / 2;
-                double avgLeftX = (tempAdjustedCornerPoints[FrameCorner.TopLeft].X + tempAdjustedCornerPoints[FrameCorner.BottomLeft].X) / 2;
-                double avgRightX = (tempAdjustedCornerPoints[FrameCorner.TopRight].X + tempAdjustedCornerPoints[FrameCorner.BottomRight].X) / 2;
-
-                adjustedCornerPoints[FrameCorner.TopLeft] = new Vector(avgLeftX, avgTopY);
-                adjustedCornerPoints[FrameCorner.TopRight] = new Vector(avgRightX, avgTopY);
-                adjustedCornerPoints[FrameCorner.BottomRight] = new Vector(avgRightX, avgBottomY);
-                adjustedCornerPoints[FrameCorner.BottomLeft] = new Vector(avgLeftX, avgBottomY);
-
-                foreach (var frameToCornerKV in frameMethodOriginalRenderPositions[bodyIndex])
-                {
-                    IDictionary<FrameCorner, Vector> lineCornerPoints = new Dictionary<FrameCorner, Vector>();
-                    foreach (var cornerToPointKV in frameToCornerKV.Value)
-                    {
-                        lineCornerPoints[cornerToPointKV.Key] = adjustedCornerPoints[cornerToPointKV.Key];
-                    }
-
-                    targetFrameLinePoints[frameToCornerKV.Key] = lineCornerPoints;
-                }
-
-                IDictionary<FramePosition, Line> frameLines = frameMethodRenderable[bodyIndex];
-                foreach (var frameCornerKV in targetFrameLinePoints)
-                {
-                    Line frameLine = frameLines[frameCornerKV.Key];
-                    Vector start = frameCornerKV.Value.ElementAt(0).Value;
-                    Vector end = frameCornerKV.Value.ElementAt(1).Value;
-
-                    UpdateFrameLine(frameLine, start, end, true, 1000, Visibility.Visible);
+                    trackedPosition = currentBodyPositions[i].Item1;
+                    positionIndex = i;
+                    break;
                 }
             }
+
+            return new Tuple<int, Point>(positionIndex, trackedPosition);
         }
 
         /// <summary>
@@ -806,6 +931,20 @@ namespace TestSuite
             scaleFactor = Math.Max(0.0, Math.Min(scaleFactor, 1.0));
 
             return scaleFactor;
+        }
+
+        /// <summary>
+        /// Rotates a Camera Space Point, adjusting for the Tilt of the Camera
+        /// </summary>
+        /// <param name="pointToRotate">The Camera Point (X/Y/Z) to be rotated</param>
+        /// <returns>A Camera Space Point, rotated adjusting for camera tilt</returns>
+        public CameraSpacePoint RotateCameraPointForTilt(CameraSpacePoint pointToRotate, bool forceRotate = false)
+        {
+            Vector3 pointToRotateVector = new Vector3(pointToRotate.X, pointToRotate.Y, pointToRotate.Z);
+            Vector3 rotatedPointVector = Vector3.Transform(pointToRotateVector, pointRotationMatrix);
+
+            return pointToRotate;
+            //return new CameraSpacePoint { X = rotatedPointVector.X, Y = rotatedPointVector.Y, Z = rotatedPointVector.Z };
         }
     }
 }

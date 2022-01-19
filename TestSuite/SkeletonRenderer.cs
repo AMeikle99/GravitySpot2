@@ -82,14 +82,14 @@ namespace TestSuite
         /// Updates the rendering for each Skeleton. Adding new ones and removing ones out of view
         /// </summary>
         /// <param name="bodies">An array of Body objects, ideally from GetAndRefreshBodyData()</param>
-        public void UpdateAllSkeletons(Body[] bodies)
+        public void UpdateAllSkeletons(Body[] bodies, List<int> bodyIndexesToShow)
         {
             for (int i = 0; i < bodies.Length; i++)
             {
                 Body body = bodies[i];
 
                 // Check if the current body is being tracked, update or clear as appropriate
-                if (body.IsTracked)
+                if (body.IsTracked && bodyIndexesToShow.Contains(i))
                 {
                     UpdateSkeleton(body, i);
                 }

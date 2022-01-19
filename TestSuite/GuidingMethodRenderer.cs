@@ -101,6 +101,8 @@ namespace TestSuite
         private IDictionary<int, CameraSpacePoint> bodyTrackingPoint;
         private IDictionary<int, bool> isShowingBodyFrame;
         private bool updateBodyFrames = false;
+        private IDictionary<Line, Storyboard> frameStoryboards;
+
         private float FrameMargin
         {
             get => currentRepresentationType == RepresentationType.MirrorImage ? 70 : 0;
@@ -621,13 +623,23 @@ namespace TestSuite
         /// <param name="guidingMethod">The Guiding Method to be cleared</param>
         private void HideAllGuidingMethods(GuidingMethod guidingMethod)
         {
-            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
-            {
-                HideGuidingMethod(guidingMethod, i);
-            }
             if (guidingMethod == GuidingMethod.Framing)
             {
                 updateBodyFrames = false;
+                bodyTrackingPoint.Clear();
+                frameMethodCornerOffsets.Clear();
+
+                foreach (Storyboard sb in frameStoryboards.Values)
+                {
+                    sb.Remove(overlayCanvas);
+                    sb.Children.Clear();
+                }
+                frameStoryboards.Clear();
+            }
+
+            for (int i = 0; i < kinectSensor.BodyFrameSource.BodyCount; i++)
+            {
+                HideGuidingMethod(guidingMethod, i);
             }
         }
 
@@ -647,6 +659,7 @@ namespace TestSuite
             ellipseMethodRenderable = new Dictionary<int, Ellipse>();
             frameMethodRenderable = new Dictionary<int, IDictionary<FramePosition, Line>>();
             frameMethodCornerOffsets = new Dictionary<int, IDictionary<FrameCorner, Vector3>>();
+            frameStoryboards = new Dictionary<Line, Storyboard>();
             bodyTrackingPoint = new Dictionary<int, CameraSpacePoint>();
             isShowingBodyFrame = new Dictionary<int, bool>();
 
@@ -860,7 +873,8 @@ namespace TestSuite
                 Storyboard.SetTargetProperty(daY1, new PropertyPath(Line.Y1Property));
                 Storyboard.SetTargetProperty(daY2, new PropertyPath(Line.Y2Property));
 
-                sb.Begin(overlayCanvas);
+                sb.Begin(overlayCanvas, true);
+                frameStoryboards[frameLine] = sb;
             }
             else
             {

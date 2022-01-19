@@ -41,7 +41,7 @@ namespace TestSuite
             bitmapImage = new WriteableBitmap(colorFrameDesc.Width, colorFrameDesc.Height, 1, 1, PixelFormats.Bgra32, null);
         }
 
-        public void UpdateAllMirrorImages(MultiSourceFrame frame)
+        public void UpdateAllMirrorImages(MultiSourceFrame frame, List<int> bodyIndexesToShow)
         {
             ColorFrame colorFrame = null;
             BodyIndexFrame bodyIndexFrame = null;
@@ -77,7 +77,7 @@ namespace TestSuite
                 kinectSensor.CoordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthBuffer.UnderlyingBuffer, depthBufferSize, colorToDepthPoints);
                 colorFrame.CopyConvertedFrameDataToIntPtr(bitmapImage.BackBuffer, (uint)colorToDepthPoints.Length * BytesPerPixel, ColorImageFormat.Bgra);
 
-                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer);
+                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow);
                 UpdateBitmapImage();
             }
             // IMPORTANT - Dispose of all frames and buffers, otherwise there is a severe fps hit
@@ -107,7 +107,7 @@ namespace TestSuite
         /// <param name="pixelWidth">How many pixels wide the body index frame is</param>
         /// <param name="pixelHeight">How many pixels tall the body index frame is</param>
         /// <param name="bodyIndexBuffer">Object which holds the bodyIndexFrame underlying buffer (Acquired with LockImageBuffer())</param>
-        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer)
+        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow)
         {
             // Create a static pointer to the data buffer which can be offset to access a specific entry
             IntPtr bodyIndexByteAccess = bodyIndexBuffer.UnderlyingBuffer;
@@ -143,7 +143,8 @@ namespace TestSuite
                             int depthPixelIndex = (depthY * pixelWidth) + depthX;
 
                             // Skip if value is not 255 (255 is the No Body Value, otherwise it would be the body index)
-                            if (bodyIndexBytePtr[depthPixelIndex] != 0xff)
+                            int bodyIndex = bodyIndexBytePtr[depthPixelIndex];
+                            if (bodyIndexesToShow.Contains(bodyIndex))
                             {
                                 continue;
                             }

@@ -29,6 +29,16 @@ namespace TestSuite
         None
     }
 
+    public enum ExperimentState
+    {
+        WaitingToBegin,
+        InitialControllerLink,
+        RedoControllerLink,
+        WaitingToStartCondition,
+        ConditionInProgress,
+        ExperimentComplete
+    }
+
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -41,6 +51,44 @@ namespace TestSuite
         private const double MaxSkeletonDepth = 4;
 
         private const RepresentationType DEFAULT_REPRESENTATION = RepresentationType.None;
+
+        // Mapping from Condition ID to Representation/Guiding Method Pair
+        private IDictionary<int, Tuple<RepresentationType, GuidingMethod>> idToConditionMap = new Dictionary<int, Tuple<RepresentationType, GuidingMethod>>()
+        {
+            {0, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Framing) },
+            {1, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Ellipse) },
+            {2, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Framing) },
+            {3, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.TextBox) },
+            {4, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.TextBox) },
+            {5, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.VisualEffect) },
+            {6, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Ellipse) },
+            {7, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.VisualEffect) },
+            {8, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Arrows) },
+            {9, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Arrows) },
+        };
+
+        // Mapping an experiment to the ordering of conditions to show
+        private IDictionary<int, int[]> experimentIDToConditionsMap = new Dictionary<int, int[]>()
+        {
+            {0, new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9} },
+            {1, new int[] {1, 3, 0, 5, 2, 7, 4, 9, 6, 8} },
+            {2, new int[] {3, 5, 1, 7, 0, 9, 2, 8, 4, 6} },
+            {3, new int[] {5, 7, 3, 9, 1, 8, 0, 6, 2, 4} },
+            {4, new int[] {7, 9, 5, 8, 3, 6, 1, 4, 0, 2} },
+            {5, new int[] {9, 8, 7, 6, 5, 4, 3, 2, 1, 0} },
+            {6, new int[] {8, 6, 9, 4, 7, 2, 5, 0, 3, 1} },
+            {7, new int[] {6, 4, 8, 2, 9, 0, 7, 1, 5, 3} },
+            {8, new int[] {4, 2, 6, 0, 8, 1, 9, 3, 7, 5} },
+            {9, new int[] {2, 0, 4, 1, 6, 3, 8, 5, 9, 7} },
+        };
+
+        private int currentExperimentID = 1;
+        private int nextParticipantID = 1;
+        private int currentParticipantLinked = 0;
+        private int userCountForExperiment = 0;
+        private int currentConditionOffset = 0;
+        private ExperimentState currentExperimentState = ExperimentState.WaitingToBegin;
+        private List<UserIndex> linkedControllers;
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -58,6 +106,7 @@ namespace TestSuite
         private SkeletonRenderer skeletonRenderer;
         // Controls the rendering of the mirror image representation
         private MirrorImageRenderer mirrorImageRenderer;
+        private List<int> bodyIndexesToShow;
         // Controls rendering the different guiding techniques 
         private GuidingMethodRenderer guidingMethodRenderer;
 
@@ -68,7 +117,49 @@ namespace TestSuite
 
         private UserController[] controllers;
 
+        private Body[] bodies = new Body[0];
+        private Body[] allBodies
+        {
+            get => bodies;
+            set
+            {
+                if (!bodies.Equals(value))
+                {
+                    bodies = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("TrackedUserCount"));
+                }
+            }
+        }
+        private int[] currentTrackedBodyIDs;
+        private Body[] trackedBodies
+        {
+            get
+            {
+                if (allBodies.Where(body => body == null).Any()) return new Body[0];
+
+                return allBodies.Where(body => body.IsTracked).ToArray();
+            }
+        }
+
+        private const string EXP_START_MESSAGE = "Waiting to Start...";
+        private const string EXP_END_MESSAGE = "All Tasks Complete\nThank You";
+        private const string EXP_COND_WAIT_MESSAGE = "Waiting for Next Task...";
+        private string userLabelMessage = EXP_START_MESSAGE;
+
         // Debugging
+        public bool DebugMode
+        {
+            get => debugMode;
+            set
+            {
+                if (debugMode != value)
+                {
+                    debugMode = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("DebugMode"));
+                }
+            }
+        }
+        private bool debugMode;
         private Point[] randomPoints;
         private Point randomPoint;
         private Point bodyPoint;
@@ -78,6 +169,34 @@ namespace TestSuite
         private double bodyFinalDistance;
         private double tiltAngle;
 
+        public ExperimentState CurrentExperimentState
+        {
+            get => currentExperimentState;
+            set
+            {
+                if (currentExperimentState != value)
+                {
+                    currentExperimentState = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentExperimentState"));
+                }
+            }
+        }
+        public int TrackedUserCount
+        {
+            get => trackedBodies.Length;
+        }
+        public string UserLabelMessage
+        {
+            get => userLabelMessage;
+            set
+            {
+                if (userLabelMessage != value)
+                {
+                    userLabelMessage = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("UserLabelMessage"));
+                }
+            }
+        }
         public double TiltAngle
         {
             get => Math.Round(tiltAngle, 2);
@@ -255,8 +374,11 @@ namespace TestSuite
             InitializeComponent();
 
             DataContext = this;
+            int bodyCount = kinectSensor.BodyFrameSource.BodyCount;
 
-            int[] bodyRange = Enumerable.Range(0, kinectSensor.BodyFrameSource.BodyCount).ToArray();
+            allBodies = new Body[bodyCount];
+            currentTrackedBodyIDs = new int[bodyCount];
+            int[] bodyRange = Enumerable.Range(0, bodyCount).ToArray();
             randomPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
 
             UserIndex[] controllerRange = { UserIndex.One, UserIndex.Two, UserIndex.Three, UserIndex.Four};
@@ -320,9 +442,25 @@ namespace TestSuite
                     if (float.TryParse(newHeightOffsetStr, out newHeightOffset)) guidingMethodRenderer.CameraHeightOffset = newHeightOffset;
                     break;
 
-                // Start User Timers
+                // Enable/Disable Debug
+                case Key.D:
+                    DebugMode = !DebugMode;
+                    break;
+
+                // Experiment Control
+                // Begin Experiment
                 case Key.Space:
-                    StartTimers();
+                    if (CurrentExperimentState == ExperimentState.WaitingToBegin && trackedBodies.Length > 0)
+                    {
+                        BeginExperiment();
+                    }
+                    break;
+                // Advance To Next Condition
+                case Key.A:
+                    if (CurrentExperimentState != ExperimentState.WaitingToBegin && CurrentExperimentState != ExperimentState.InitialControllerLink && CurrentExperimentState != ExperimentState.RedoControllerLink)
+                    {
+                        AdvanceState();
+                    }
                     break;
 
                 // Exit Application
@@ -339,7 +477,6 @@ namespace TestSuite
         private void MainWindow_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
             MultiSourceFrame multiSourceFrame = e.FrameReference.AcquireFrame();
-            Body[] bodies;
 
             if (multiSourceFrame == null)
             {
@@ -355,27 +492,29 @@ namespace TestSuite
                 guidingMethodRenderer.CameraTiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y);
                 TiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y) * 180 / Math.PI;
 
-                bodies = new Body[kinectSensor.BodyFrameSource.BodyCount];
+                Body[] tempBodies = new Body[bodyFrame.BodyCount];
+                bodyFrame.GetAndRefreshBodyData(tempBodies);
 
-                bodyFrame.GetAndRefreshBodyData(bodies);
+                allBodies = tempBodies;
             }
 
+            if (CurrentExperimentState != ExperimentState.WaitingToBegin && CurrentExperimentState != ExperimentState.WaitingToStartCondition && CurrentExperimentState != ExperimentState.ExperimentComplete)
             switch (CurrentUserRepresentation)
             {
                 case RepresentationType.Skeleton:
                     // Renders the Skeleton Representation 
-                    RenderSkeleton(bodies);
+                    RenderSkeleton();
                     break;
                 case RepresentationType.MirrorImage:
-                    // Rendersthe Mirror Image Representation
-                    RenderMirrorImage(multiSourceFrame);
+                    // Renders the Mirror Image Representation
+                    RenderMirrorImage(multiSourceFrame, bodyIndexesToShow);
                     break;
                 case RepresentationType.None:
                     break;
             }
 
             // Render the Guiding Method currently selected
-            RenderGuidingMethod(bodies);
+            RenderGuidingMethod(allBodies);
         }
         #endregion
 
@@ -384,9 +523,8 @@ namespace TestSuite
         /// Renders the users as a Skeleton Representation
         /// </summary>
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
-        private void RenderSkeleton(Body[] bodies)
+        private void RenderSkeleton()
         {
-            Body[] trackedBodies = bodies.Where(body => body.IsTracked).ToArray();
 
             if (trackedBodies.Any())
             {
@@ -397,7 +535,7 @@ namespace TestSuite
                 BodyPointY = bodyCameraPoint.Y;
             }
 
-            skeletonRenderer.UpdateAllSkeletons(bodies);
+            skeletonRenderer.UpdateAllSkeletons(allBodies, bodyIndexesToShow);
         }
         #endregion
 
@@ -406,32 +544,31 @@ namespace TestSuite
         /// Renders the users as a Mirror Image Representation
         /// </summary>
         /// <param name="multiSourceFrame">The Multi Source Frame containing the frame data for color, infrared and body index</param>
-        private void RenderMirrorImage(MultiSourceFrame multiSourceFrame)
+        private void RenderMirrorImage(MultiSourceFrame multiSourceFrame, List<int> bodyIndexesToShow)
         {
-            mirrorImageRenderer.UpdateAllMirrorImages(multiSourceFrame);
+            mirrorImageRenderer.UpdateAllMirrorImages(multiSourceFrame, bodyIndexesToShow);
         }
         #endregion
 
         #region IUserControllerDelegate
         /// <summary>
-        /// Delegate Method to stop the timing for a specific controller/user
+        /// Delegate Method to handle a button press for the user/controller
         /// </summary>
         /// <param name="controllerIndex">The index of the controller that the user interacted with</param>
-        /// <param name="elapsedTime">The time elapsed from starting to ending the user timer</param>
-        void IUserControllerDelegate.StopTiming(UserIndex controllerIndex, long elapsedTime)
+        void IUserControllerDelegate.LetterButtonPressed(UserIndex controllerIndex)
         {
-            // Store Controller Index and convert time to seconds, 2 d.p
-            ControllerIndex = controllerIndex;
-            ControllerTime = Math.Round(elapsedTime / 1000.0, 2);
-
-            Tuple<int, Point> firstTrackedBodyInfo = guidingMethodRenderer.PositionOfFirstTrackedBody();
-            if (firstTrackedBodyInfo.Item1 == -1) return;
-
-            Point targetPoint = randomPoints[firstTrackedBodyInfo.Item1];
-            Point bodyPoint = firstTrackedBodyInfo.Item2;
-
-            double finalDistance = GuidingMethodRenderer.DistanceBetweenPoints(bodyPoint, targetPoint);
-            BodyFinalDistance = Math.Round(finalDistance * 100, 2);
+            Dispatcher.Invoke(() =>
+            {
+                if ((CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.RedoControllerLink) && !linkedControllers.Contains(controllerIndex))
+                {
+                    linkedControllers.Add(controllerIndex);
+                    AdvanceState();
+                }
+                else if (CurrentExperimentState == ExperimentState.ConditionInProgress)
+                {
+                    controllers[(int)controllerIndex].StopTiming();
+                }
+            });
         }
 
         /// <summary>
@@ -463,10 +600,121 @@ namespace TestSuite
         /// </summary>
         private void StartTimers()
         {
-            foreach (UserController controller in controllers)
+            for (int i = 0; i < userCountForExperiment; i++)
             {
-                controller.StartTiming();
+                controllers[i].StartTiming();
             }
+        }
+
+        private void StopTimers()
+        {
+            for (int i = 0; i < userCountForExperiment; i++)
+            {
+                controllers[i].StopTiming();
+            }
+        }
+        #endregion
+
+        #region ExperimentStateMethods
+        private void AdvanceState()
+        {
+            switch (CurrentExperimentState)
+            {
+                case ExperimentState.WaitingToBegin:
+                    CurrentExperimentState = ExperimentState.InitialControllerLink;
+                    UserLabelMessage = "";
+                    ShowNextUserForLink();
+                    break;
+                case ExperimentState.WaitingToStartCondition:
+                    StartNextCondition();
+                    UserLabelMessage = "";
+                    break;
+                case ExperimentState.ConditionInProgress:
+                    ResetForNextCondition();
+
+                    if (currentConditionOffset == experimentIDToConditionsMap[currentExperimentID].Length)
+                    {
+                        EndExperiment();
+                    } else
+                    {
+                        UserLabelMessage = EXP_COND_WAIT_MESSAGE;
+                    }
+                    break;
+                case ExperimentState.InitialControllerLink:
+                    if (currentParticipantLinked == userCountForExperiment)
+                    {
+                        UserLabelMessage = EXP_COND_WAIT_MESSAGE;
+                        ResetForNextCondition();
+                    }
+                    else
+                    {
+                        ShowNextUserForLink();
+                    }
+                    break;
+                case ExperimentState.RedoControllerLink:
+                    if (currentParticipantLinked == userCountForExperiment)
+                    {
+                        UserLabelMessage = EXP_COND_WAIT_MESSAGE;
+                        ResetForNextCondition();
+                        if (currentConditionOffset == experimentIDToConditionsMap[currentExperimentID].Length)
+                        {
+                            EndExperiment();
+                        }
+                    } 
+                    else
+                    {
+                        ShowNextUserForLink();
+                    }
+                    break;
+                case ExperimentState.ExperimentComplete:
+                    UserLabelMessage = EXP_START_MESSAGE;
+                    CurrentExperimentState = ExperimentState.WaitingToBegin;
+                    break;
+            }
+        }
+
+        private void BeginExperiment()
+        {
+            userCountForExperiment = trackedBodies.Length;
+            List<Body> allBodiesList = allBodies.ToList();
+            currentTrackedBodyIDs = trackedBodies.Select(body => allBodiesList.IndexOf(body)).ToArray();
+            linkedControllers = new List<UserIndex>(userCountForExperiment);
+            AdvanceState();
+        }
+
+        private void EndExperiment()
+        {
+            currentExperimentID++;
+            currentConditionOffset = 0;
+            currentParticipantLinked = 0;
+            UserLabelMessage = EXP_END_MESSAGE;
+            CurrentExperimentState = ExperimentState.ExperimentComplete;
+        }
+
+        private void StartNextCondition()
+        {
+            int nextConditionID = experimentIDToConditionsMap[currentExperimentID][currentConditionOffset++];
+            Tuple<RepresentationType, GuidingMethod> conditionVariables = idToConditionMap[nextConditionID];
+
+            CurrentUserRepresentation = conditionVariables.Item1;
+            CurrentGuidingMethod = conditionVariables.Item2;
+
+            CurrentExperimentState = ExperimentState.ConditionInProgress;
+            StartTimers();
+        }
+
+        private void ResetForNextCondition()
+        {
+            StopTimers();
+            CurrentUserRepresentation = RepresentationType.None;
+            CurrentGuidingMethod = GuidingMethod.None;
+            CurrentExperimentState = ExperimentState.WaitingToStartCondition;
+        }
+
+        private void ShowNextUserForLink()
+        {
+            CurrentUserRepresentation = RepresentationType.MirrorImage;
+            bodyIndexesToShow = new List<int> { currentTrackedBodyIDs[currentParticipantLinked++] };
         }
         #endregion
 

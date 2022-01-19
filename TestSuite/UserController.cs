@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Timers;
+using System.Windows.Threading;
 using SharpDX.XInput;
 
 namespace TestSuite
@@ -26,7 +27,6 @@ namespace TestSuite
 
         // Controls the timer for this controller
         private Stopwatch conditionStopwatch;
-        private long elapsedTime;
 
         /// <summary>
         /// Instantiates a single user xbox controller
@@ -69,23 +69,10 @@ namespace TestSuite
 
             gamepad = controller.GetState().Gamepad;
             
-            // Stop Timer
+            // Stop Timer / Confirm User Selection
             if (ButtonsPressed(gamepad.Buttons, GamepadButtonFlags.A))
             {
-                if (conditionStopwatch.IsRunning)
-                {
-                    conditionStopwatch.Stop();
-                    elapsedTime = conditionStopwatch.ElapsedMilliseconds;
-                    controllerDelegate.StopTiming(userIndex, elapsedTime);
-                }
-            }
-            // Restart Timer
-            else if (ButtonsPressed(gamepad.Buttons, GamepadButtonFlags.B)) 
-            {
-                if (!conditionStopwatch.IsRunning)
-                {
-                    conditionStopwatch.Restart();
-                }
+                controllerDelegate.LetterButtonPressed(userIndex);
             }
 
             if (conditionStopwatch.IsRunning)
@@ -99,10 +86,20 @@ namespace TestSuite
         /// </summary>
         public void StartTiming()
         {
-            if (isConnected)
+            conditionStopwatch.Restart();
+        }
+
+        public void StopTiming()
+        {
+            if (conditionStopwatch.IsRunning)
             {
-                conditionStopwatch.Restart();
+                conditionStopwatch.Stop();
             }
+        }
+
+        public long TimeElapsed()
+        {
+            return conditionStopwatch.ElapsedMilliseconds;
         }
 
         /// <summary>
@@ -123,7 +120,7 @@ namespace TestSuite
     /// </summary>
     interface IUserControllerDelegate
     {
-        void StopTiming(UserIndex controllerIndex, long elapsedTime);
+        void LetterButtonPressed(UserIndex controllerIndex);
         void UpdateTimeElapsed(UserIndex controllerIndex, long elapsedTime);
     }
 }

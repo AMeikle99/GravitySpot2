@@ -82,6 +82,7 @@ namespace TestSuite
         /// Updates the rendering for each Skeleton. Adding new ones and removing ones out of view
         /// </summary>
         /// <param name="bodies">An array of Body objects, ideally from GetAndRefreshBodyData()</param>
+        /// <param name="bodyIndexesToShow">A list of valid body indexes to display</param>
         public void UpdateAllSkeletons(Body[] bodies, List<int> bodyIndexesToShow)
         {
             for (int i = 0; i < bodies.Length; i++)

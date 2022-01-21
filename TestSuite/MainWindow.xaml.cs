@@ -36,7 +36,8 @@ namespace TestSuite
         RedoControllerLink,
         WaitingToStartCondition,
         ConditionInProgress,
-        ExperimentComplete
+        ExperimentComplete,
+        DebugOverride
     }
 
     /// <summary>
@@ -51,6 +52,11 @@ namespace TestSuite
         private const double MaxSkeletonDepth = 4;
 
         private const RepresentationType DEFAULT_REPRESENTATION = RepresentationType.None;
+
+        private const string EXP_START_MESSAGE = "Waiting to Start...";
+        private const string EXP_END_MESSAGE = "All Tasks Complete\nThank You";
+        private const string EXP_COND_WAIT_MESSAGE = "Waiting for Next Task...";
+
 
         // Mapping from Condition ID to Representation/Guiding Method Pair
         private IDictionary<int, Tuple<RepresentationType, GuidingMethod>> idToConditionMap = new Dictionary<int, Tuple<RepresentationType, GuidingMethod>>()
@@ -82,6 +88,7 @@ namespace TestSuite
             {9, new int[] {2, 0, 4, 1, 6, 3, 8, 5, 9, 7} },
         };
 
+        // Experiment State/Condition Variables
         private int currentExperimentID = 1;
         private int nextParticipantID = 1;
         private int currentParticipantLinked = 0;
@@ -106,7 +113,7 @@ namespace TestSuite
         private SkeletonRenderer skeletonRenderer;
         // Controls the rendering of the mirror image representation
         private MirrorImageRenderer mirrorImageRenderer;
-        private List<int> bodyIndexesToShow;
+        private List<int> bodyIndexesToShow = new List<int>();
         // Controls rendering the different guiding techniques 
         private GuidingMethodRenderer guidingMethodRenderer;
 
@@ -117,6 +124,7 @@ namespace TestSuite
 
         private UserController[] controllers;
 
+        // Kinect Body Data
         private Body[] bodies = new Body[0];
         private Body[] allBodies
         {
@@ -130,6 +138,8 @@ namespace TestSuite
                 }
             }
         }
+
+        // Indexes of bodies which are tracked
         private int[] currentTrackedBodyIDs;
         private Body[] trackedBodies
         {
@@ -141,9 +151,7 @@ namespace TestSuite
             }
         }
 
-        private const string EXP_START_MESSAGE = "Waiting to Start...";
-        private const string EXP_END_MESSAGE = "All Tasks Complete\nThank You";
-        private const string EXP_COND_WAIT_MESSAGE = "Waiting for Next Task...";
+       
         private string userLabelMessage = EXP_START_MESSAGE;
 
         // Debugging
@@ -169,6 +177,7 @@ namespace TestSuite
         private double bodyFinalDistance;
         private double tiltAngle;
 
+        #region PublicViewModel
         public ExperimentState CurrentExperimentState
         {
             get => currentExperimentState;
@@ -267,6 +276,7 @@ namespace TestSuite
                     currentGuidingMethod = value;
                     guidingMethodRenderer.SetGuidingMethod(value);
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentGuidingMethod"));
+                    if (CurrentExperimentState == ExperimentState.DebugOverride) controllers.ToList().ForEach(controller => controller.StartTiming());
                 }
             }
         }
@@ -359,6 +369,7 @@ namespace TestSuite
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
+        #endregion
 
         public MainWindow()
         {
@@ -405,33 +416,33 @@ namespace TestSuite
             {
                 // Manually Switch Guiding Technique
                 case Key.D1:
-                    CurrentGuidingMethod = GuidingMethod.TextBox;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.TextBox;
                     break;
                 case Key.D2:
-                    CurrentGuidingMethod = GuidingMethod.Arrows;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Arrows;
                     break;
                 case Key.D3:
-                    CurrentGuidingMethod = GuidingMethod.Ellipse;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Ellipse;
                     break;
                 case Key.D4:
-                    CurrentGuidingMethod = GuidingMethod.Framing;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Framing;
                     break;
                 case Key.D5:
-                    CurrentGuidingMethod = GuidingMethod.VisualEffect;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.VisualEffect;
                     break;
                 case Key.D6:
-                    CurrentGuidingMethod = GuidingMethod.None;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.None;
                     break;
 
                 // Manually Switch User Representation
                 case Key.D8:
-                    CurrentUserRepresentation = RepresentationType.Skeleton;
+                    if (IsDebugState()) CurrentUserRepresentation = RepresentationType.Skeleton;
                     break;
                 case Key.D9:
-                    CurrentUserRepresentation = RepresentationType.MirrorImage;
+                    if (IsDebugState()) CurrentUserRepresentation = RepresentationType.MirrorImage;
                     break;
                 case Key.D0:
-                    CurrentUserRepresentation = RepresentationType.None;
+                    if (IsDebugState()) CurrentUserRepresentation = RepresentationType.None;
                     break;
 
                 // Debugging Adjustments
@@ -444,7 +455,23 @@ namespace TestSuite
 
                 // Enable/Disable Debug
                 case Key.D:
+                    if (CurrentExperimentState != ExperimentState.WaitingToBegin && !IsDebugState()) return;
+
                     DebugMode = !DebugMode;
+
+                    if (DebugMode)
+                    {
+                        CurrentExperimentState = ExperimentState.DebugOverride;
+                        bodyIndexesToShow = Enumerable.Range(0, bodies.Length).ToList();
+                        UserMessage.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        UserMessage.Visibility = Visibility.Visible;
+                        CurrentExperimentState = ExperimentState.WaitingToBegin;
+                        CurrentUserRepresentation = RepresentationType.None;
+                        CurrentGuidingMethod = GuidingMethod.None;
+                    }
                     break;
 
                 // Experiment Control
@@ -457,7 +484,8 @@ namespace TestSuite
                     break;
                 // Advance To Next Condition
                 case Key.A:
-                    if (CurrentExperimentState != ExperimentState.WaitingToBegin && CurrentExperimentState != ExperimentState.InitialControllerLink && CurrentExperimentState != ExperimentState.RedoControllerLink)
+                    List<ExperimentState> validAdvanceStates = new List<ExperimentState> { ExperimentState.WaitingToStartCondition, ExperimentState.ConditionInProgress, ExperimentState.ExperimentComplete };
+                    if (validAdvanceStates.Contains(CurrentExperimentState))
                     {
                         AdvanceState();
                     }
@@ -498,12 +526,20 @@ namespace TestSuite
                 allBodies = tempBodies;
             }
 
-            if (CurrentExperimentState != ExperimentState.WaitingToBegin && CurrentExperimentState != ExperimentState.WaitingToStartCondition && CurrentExperimentState != ExperimentState.ExperimentComplete)
+            if (trackedBodies.Any())
+            {
+                Body firstBody = trackedBodies.First();
+                CameraSpacePoint bodyCameraPoint = firstBody.Joints[JointType.SpineBase].Position;
+                bodyCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(bodyCameraPoint);
+                BodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
+                BodyPointY = bodyCameraPoint.Y;
+            }
+
             switch (CurrentUserRepresentation)
             {
                 case RepresentationType.Skeleton:
                     // Renders the Skeleton Representation 
-                    RenderSkeleton();
+                    RenderSkeleton(bodyIndexesToShow);
                     break;
                 case RepresentationType.MirrorImage:
                     // Renders the Mirror Image Representation
@@ -523,19 +559,9 @@ namespace TestSuite
         /// Renders the users as a Skeleton Representation
         /// </summary>
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
-        private void RenderSkeleton()
+        private void RenderSkeleton(List<int> bodyIndexes)
         {
-
-            if (trackedBodies.Any())
-            {
-                Body firstBody = trackedBodies.First();
-                CameraSpacePoint bodyCameraPoint = firstBody.Joints[JointType.SpineBase].Position;
-                bodyCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(bodyCameraPoint);
-                BodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
-                BodyPointY = bodyCameraPoint.Y;
-            }
-
-            skeletonRenderer.UpdateAllSkeletons(allBodies, bodyIndexesToShow);
+            skeletonRenderer.UpdateAllSkeletons(allBodies, bodyIndexes);
         }
         #endregion
 
@@ -557,6 +583,7 @@ namespace TestSuite
         /// <param name="controllerIndex">The index of the controller that the user interacted with</param>
         void IUserControllerDelegate.LetterButtonPressed(UserIndex controllerIndex)
         {
+            // Dispatch to prevent UI thread getting blocked
             Dispatcher.Invoke(() =>
             {
                 if ((CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.RedoControllerLink) && !linkedControllers.Contains(controllerIndex))
@@ -564,9 +591,10 @@ namespace TestSuite
                     linkedControllers.Add(controllerIndex);
                     AdvanceState();
                 }
-                else if (CurrentExperimentState == ExperimentState.ConditionInProgress)
+                else if (CurrentExperimentState == ExperimentState.ConditionInProgress || CurrentExperimentState == ExperimentState.DebugOverride)
                 {
                     controllers[(int)controllerIndex].StopTiming();
+                    BodyFinalDistance = Math.Round(BodyDistance * 100, 2);
                 }
             });
         }
@@ -578,8 +606,12 @@ namespace TestSuite
         /// <param name="elapsedTime">The current time elapsed</param>
         void IUserControllerDelegate.UpdateTimeElapsed(UserIndex controllerIndex, long elapsedTime)
         {
-            ControllerIndex = controllerIndex;
-            ControllerTime = Math.Round(elapsedTime / 1000.0, 2);
+            // Dispatch to prevent the UI thread getting blocked
+            Dispatcher.Invoke(() =>
+            {
+                ControllerIndex = controllerIndex;
+                ControllerTime = Math.Round(elapsedTime / 1000.0, 2);
+            });
         }
         #endregion
 
@@ -590,7 +622,7 @@ namespace TestSuite
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
         private void RenderGuidingMethod(Body[] bodies)
         {
-            guidingMethodRenderer.RenderGuidingMethod(bodies, randomPoints);
+            guidingMethodRenderer.RenderGuidingMethod(bodies, randomPoints, bodyIndexesToShow);
         }
         #endregion
 
@@ -606,6 +638,9 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// For every controller, stop their timer
+        /// </summary>
         private void StopTimers()
         {
             for (int i = 0; i < userCountForExperiment; i++)
@@ -616,15 +651,20 @@ namespace TestSuite
         #endregion
 
         #region ExperimentStateMethods
+        /// <summary>
+        /// Move to the next state in the experiment
+        /// </summary>
         private void AdvanceState()
         {
             switch (CurrentExperimentState)
             {
+                // Move to Link User/Contoller State
                 case ExperimentState.WaitingToBegin:
                     CurrentExperimentState = ExperimentState.InitialControllerLink;
                     UserLabelMessage = "";
                     ShowNextUserForLink();
                     break;
+                // Move to Next Condition
                 case ExperimentState.WaitingToStartCondition:
                     StartNextCondition();
                     UserLabelMessage = "";
@@ -632,14 +672,17 @@ namespace TestSuite
                 case ExperimentState.ConditionInProgress:
                     ResetForNextCondition();
 
+                    // Last Condition Complete, End Experiment. Otherwise display wait message
                     if (currentConditionOffset == experimentIDToConditionsMap[currentExperimentID].Length)
                     {
                         EndExperiment();
-                    } else
+                    }
+                    else
                     {
                         UserLabelMessage = EXP_COND_WAIT_MESSAGE;
                     }
                     break;
+                // All users/controllers linked, Move To Next Condition. Otherwise get next user linked
                 case ExperimentState.InitialControllerLink:
                     if (currentParticipantLinked == userCountForExperiment)
                     {
@@ -651,6 +694,7 @@ namespace TestSuite
                         ShowNextUserForLink();
                     }
                     break;
+                // All users/controllers linked, Move To Next Condition/End Experiment. Otherwise get next user linked
                 case ExperimentState.RedoControllerLink:
                     if (currentParticipantLinked == userCountForExperiment)
                     {
@@ -666,6 +710,7 @@ namespace TestSuite
                         ShowNextUserForLink();
                     }
                     break;
+                // Move to waiting for experiment to begin state
                 case ExperimentState.ExperimentComplete:
                     UserLabelMessage = EXP_START_MESSAGE;
                     CurrentExperimentState = ExperimentState.WaitingToBegin;
@@ -673,6 +718,9 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Start the experiment
+        /// </summary>
         private void BeginExperiment()
         {
             userCountForExperiment = trackedBodies.Length;
@@ -682,6 +730,9 @@ namespace TestSuite
             AdvanceState();
         }
 
+        /// <summary>
+        /// End the experiment
+        /// </summary>
         private void EndExperiment()
         {
             currentExperimentID++;
@@ -691,18 +742,37 @@ namespace TestSuite
             CurrentExperimentState = ExperimentState.ExperimentComplete;
         }
 
+        /// <summary>
+        /// Begin the next condition in the experiment
+        /// </summary>
         private void StartNextCondition()
         {
-            int nextConditionID = experimentIDToConditionsMap[currentExperimentID][currentConditionOffset++];
-            Tuple<RepresentationType, GuidingMethod> conditionVariables = idToConditionMap[nextConditionID];
-
-            CurrentUserRepresentation = conditionVariables.Item1;
-            CurrentGuidingMethod = conditionVariables.Item2;
+            SetExperimentConditions(currentExperimentID, currentConditionOffset++);
 
             CurrentExperimentState = ExperimentState.ConditionInProgress;
             StartTimers();
         }
 
+        /// <summary>
+        /// Initialise the screen for the appropriate condition
+        /// </summary>
+        /// <param name="experimentID">The Experiment ID to use</param>
+        /// <param name="conditionOffset">The index of the condition for this experiment to be shown (i.e 0 is the first condition but may have ID 8 e.g.)</param>
+        private void SetExperimentConditions(int experimentID, int conditionOffset)
+        {
+            int numOfCond = idToConditionMap.Count;
+            int numOfExp = experimentIDToConditionsMap.Count;
+
+            int nextConditionID = experimentIDToConditionsMap[experimentID % numOfExp][conditionOffset % numOfCond];
+            Tuple<RepresentationType, GuidingMethod> conditionVariables = idToConditionMap[nextConditionID];
+
+            CurrentUserRepresentation = conditionVariables.Item1;
+            CurrentGuidingMethod = conditionVariables.Item2;
+        }
+
+        /// <summary>
+        /// Prepare the screen to show the next condition
+        /// </summary>
         private void ResetForNextCondition()
         {
             StopTimers();
@@ -711,10 +781,22 @@ namespace TestSuite
             CurrentExperimentState = ExperimentState.WaitingToStartCondition;
         }
 
+        /// <summary>
+        /// During User/Controller linking show the next available user
+        /// </summary>
         private void ShowNextUserForLink()
         {
             CurrentUserRepresentation = RepresentationType.MirrorImage;
             bodyIndexesToShow = new List<int> { currentTrackedBodyIDs[currentParticipantLinked++] };
+        }
+        
+        /// <summary>
+        /// Checks if the Software is in a Debug Mode
+        /// </summary>
+        /// <returns>True/false depending on if the state is currently Debug</returns>
+        private bool IsDebugState()
+        {
+            return CurrentExperimentState == ExperimentState.DebugOverride;
         }
         #endregion
 

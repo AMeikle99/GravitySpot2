@@ -89,6 +89,9 @@ namespace TestSuite
             conditionStopwatch.Restart();
         }
 
+        /// <summary>
+        /// Stops the timer for this controller
+        /// </summary>
         public void StopTiming()
         {
             if (conditionStopwatch.IsRunning)
@@ -97,6 +100,10 @@ namespace TestSuite
             }
         }
 
+        /// <summary>
+        /// Returns the current elapsed time for this controller (in milliseconds)
+        /// </summary>
+        /// <returns>The elapsed time, in ms</returns>
         public long TimeElapsed()
         {
             return conditionStopwatch.ElapsedMilliseconds;

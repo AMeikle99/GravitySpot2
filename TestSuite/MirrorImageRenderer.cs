@@ -41,6 +41,11 @@ namespace TestSuite
             bitmapImage = new WriteableBitmap(colorFrameDesc.Width, colorFrameDesc.Height, 1, 1, PixelFormats.Bgra32, null);
         }
 
+        /// <summary>
+        /// For a given frame, show and update the displayed body masks
+        /// </summary>
+        /// <param name="frame">The multi source frame that contains all the relevant frame types</param>
+        /// <param name="bodyIndexesToShow">A list of valid body indexes to show</param>
         public void UpdateAllMirrorImages(MultiSourceFrame frame, List<int> bodyIndexesToShow)
         {
             ColorFrame colorFrame = null;
@@ -107,6 +112,7 @@ namespace TestSuite
         /// <param name="pixelWidth">How many pixels wide the body index frame is</param>
         /// <param name="pixelHeight">How many pixels tall the body index frame is</param>
         /// <param name="bodyIndexBuffer">Object which holds the bodyIndexFrame underlying buffer (Acquired with LockImageBuffer())</param>
+        /// <param name="bodyIndexesToShow">A list of all the valid body indexes to show</param>
         unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow)
         {
             // Create a static pointer to the data buffer which can be offset to access a specific entry

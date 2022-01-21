@@ -203,7 +203,7 @@ namespace TestSuite
         /// </summary>
         /// <param name="bodies">An array of Body objects, populated with GetAndRefreshBodyData()</param>
         /// <param name="targetPoints">The SweetSpot points for each Body</param>
-        public void RenderGuidingMethod(Body[] bodies, Point[] targetPoints)
+        public void RenderGuidingMethod(Body[] bodies, Point[] targetPoints, List<int> indexesToShow)
         {
             for (int i = 0; i < bodies.Length; i++)
             {
@@ -215,8 +215,8 @@ namespace TestSuite
                                                     JointType.Neck, JointType.Head };
                 JointType[] renderGuidePossibleJoints = { JointType.SpineShoulder, JointType.SpineMid };
 
-                // If not being tracked then hide that body's guiding object
-                if (!body.IsTracked)
+                // If not being tracked or it is not in the specified valid indexes then hide that body's guiding object
+                if (!body.IsTracked || !indexesToShow.Contains(i))
                 {
                     HideGuidingMethod(currentGuidingMethod, i);
                     currentBodyPositions[i] = new Tuple<Point, bool>(new Point(0, 0), false);
@@ -951,6 +951,12 @@ namespace TestSuite
             return scaleFactor;
         }
 
+        /// <summary>
+        /// Rotates a Camera Space Point, adjusting for the Tilt of the Camera
+        /// </summary>
+        /// <param name="pointToRotate">The Camera Point (X/Y/Z) to be rotated</param>
+        /// <param name="forceRotate">Should the rotation be forced regardless of representation type</param>
+        /// <returns>A Camera Space Point, rotated adjusting for camera tilt</returns>
         private CameraSpacePoint rotateCameraPointForTilt(CameraSpacePoint pointToRotate, bool forceRotate = false)
         {
             return forceRotate || currentRepresentationType != RepresentationType.MirrorImage

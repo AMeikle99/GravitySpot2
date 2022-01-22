@@ -27,7 +27,8 @@ namespace TestSuite
         Arrows,
         Framing,
         Ellipse,
-        VisualEffect,
+        Pixelation,
+        Distortion,
         None
     };
 

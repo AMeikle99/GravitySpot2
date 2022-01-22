@@ -26,6 +26,7 @@ namespace TestSuite
     {
         Skeleton,
         MirrorImage,
+        Silhouette,
         None
     }
 
@@ -57,36 +58,62 @@ namespace TestSuite
         private const string EXP_END_MESSAGE = "All Tasks Complete\nThank You";
         private const string EXP_COND_WAIT_MESSAGE = "Waiting for Next Task...";
 
-
+        #region ConditionMappings
         // Mapping from Condition ID to Representation/Guiding Method Pair
         private IDictionary<int, Tuple<RepresentationType, GuidingMethod>> idToConditionMap = new Dictionary<int, Tuple<RepresentationType, GuidingMethod>>()
         {
             {0, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Framing) },
-            {1, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Ellipse) },
-            {2, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Framing) },
-            {3, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.TextBox) },
-            {4, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.TextBox) },
-            {5, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.VisualEffect) },
-            {6, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Ellipse) },
-            {7, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.VisualEffect) },
-            {8, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Arrows) },
-            {9, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Arrows) },
+            {1, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Pixelation) },
+            {2, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Distortion) },
+            {3, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Silhouette, GuidingMethod.Framing) },
+            {4, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Silhouette, GuidingMethod.TextBox) },
+            {5, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Silhouette, GuidingMethod.Distortion) },
+            {6, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Pixelation) },
+            {7, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.TextBox) },
+            {8, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Arrows) },
+            {9, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.TextBox) },
+            {10, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Silhouette, GuidingMethod.Arrows) },
+            {11, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Arrows) },
+            {12, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.MirrorImage, GuidingMethod.Framing) },
+            {13, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Silhouette, GuidingMethod.Pixelation) },
+            {14, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Distortion) },
         };
 
         // Mapping an experiment to the ordering of conditions to show
         private IDictionary<int, int[]> experimentIDToConditionsMap = new Dictionary<int, int[]>()
         {
-            {0, new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9} },
-            {1, new int[] {1, 3, 0, 5, 2, 7, 4, 9, 6, 8} },
-            {2, new int[] {3, 5, 1, 7, 0, 9, 2, 8, 4, 6} },
-            {3, new int[] {5, 7, 3, 9, 1, 8, 0, 6, 2, 4} },
-            {4, new int[] {7, 9, 5, 8, 3, 6, 1, 4, 0, 2} },
-            {5, new int[] {9, 8, 7, 6, 5, 4, 3, 2, 1, 0} },
-            {6, new int[] {8, 6, 9, 4, 7, 2, 5, 0, 3, 1} },
-            {7, new int[] {6, 4, 8, 2, 9, 0, 7, 1, 5, 3} },
-            {8, new int[] {4, 2, 6, 0, 8, 1, 9, 3, 7, 5} },
-            {9, new int[] {2, 0, 4, 1, 6, 3, 8, 5, 9, 7} },
+            {0, new int[]  { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14 } },
+            {1, new int[]  { 12, 14, 10, 13, 8,  11, 6,  9,  4,  7,  2,  5,  0,  3,  1  } },
+            {2, new int[]  { 3,  5,  1,  7,  0,  9,  2,  11, 4,  13, 6,  14, 8,  12, 10 } },
+            {3, new int[]  { 8,  10, 6,  12, 4,  14, 2,  13, 0,  11, 1,  9,  3,  7,  5  } },
+            {4, new int[]  { 7,  9,  5,  11, 3,  13, 1,  14, 0,  12, 2,  10, 4,  8,  6  } },
+            {5, new int[]  { 4,  6,  2,  8,  0,  10, 1,  12, 3,  14, 5,  13, 7,  11, 9  } },
+            {6, new int[]  { 11, 13, 9,  14, 7,  12, 5,  10, 3,  8,  1,  6,  0,  4,  2  } },
+            {7, new int[]  { 0,  2,  1,  4,  3,  6,  5,  8,  7,  10, 9,  12, 11, 14, 13 } },
+            {8, new int[]  { 14, 12, 13, 10, 11, 8,  9,  6,  7,  4,  5,  2,  3,  0,  1  } },
+            {9, new int[]  { 3,  1,  5,  0,  7,  2,  9,  4,  11, 6,  13, 8,  14, 10, 12 } },
+            {10, new int[] { 10, 8,  12, 6,  14, 4,  13, 2,  11, 0,  9,  1,  7,  3,  5  } },
+            {11, new int[] { 7,  5,  9,  3,  11, 1,  13, 0,  14, 2,  12, 4,  10, 6,  8  } },
+            {12, new int[] { 6,  4,  8,  2,  10, 0,  12, 1,  14, 3,  13, 5,  11, 7,  9  } },
+            {13, new int[] { 11, 9,  13, 7,  14, 5,  12, 3,  10, 1,  8,  0,  6,  2,  4  } },
+            {14, new int[] { 2,  0,  4,  1,  6,  3,  8,  5,  10, 7,  12, 9,  14, 11, 13 } },
+            {15, new int[] { 14, 13, 12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1,  0  } },
+            {16, new int[] { 1,  3,  0,  5,  2,  7,  4,  9,  6,  11, 8,  13, 10, 14, 12 } },
+            {17, new int[] { 10, 12, 8,  14, 6,  13, 4,  11, 2,  9,  0,  7,  1,  5,  3  } },
+            {18, new int[] { 5,  7,  3,  9,  1,  11, 0,  13, 2,  14, 4,  12, 6,  10, 8  } },
+            {19, new int[] { 6,  8,  4,  10, 2,  12, 0,  14, 1,  13, 3,  11, 5,  9,  7  } },
+            {20, new int[] { 9,  11, 7,  13, 5,  14, 3,  12, 1,  10, 0,  8,  2,  6,  4  } },
+            {21, new int[] { 2,  4,  0,  6,  1,  8,  3,  10, 5,  12, 7,  14, 9,  13, 11 } },
+            {22, new int[] { 13, 14, 11, 12, 9,  10, 7,  8,  5,  6,  3,  4,  1,  2,  0  } },
+            {23, new int[] { 1,  0,  3,  2,  5,  4,  7,  6,  9,  8,  11, 10, 13, 12, 14 } },
+            {24, new int[] { 12, 10, 14, 8,  13, 6,  11, 4,  9,  2,  7,  0,  5,  1,  3  } },
+            {25, new int[] { 5,  3,  7,  1,  9,  0,  11, 2,  13, 4,  14, 6,  12, 8,  10 } },
+            {26, new int[] { 8,  6,  10, 4,  12, 2,  14, 0,  13, 1,  11, 3,  9,  5,  7  } },
+            {27, new int[] { 9,  7,  11, 5,  13, 3,  14, 1,  12, 0,  10, 2,  8,  4,  6  } },
+            {28, new int[] { 4,  2,  6,  0,  8,  1,  10, 3,  12, 5,  14, 7,  13, 9,  11 } },
+            {29, new int[] { 13, 11, 14, 9,  12, 7,  10, 5,  8,  3,  6,  1,  4,  0,  2  } },
         };
+        #endregion
 
         // Experiment State/Condition Variables
         private int currentExperimentID = 1;
@@ -94,6 +121,7 @@ namespace TestSuite
         private int currentParticipantLinked = 0;
         private int userCountForExperiment = 0;
         private int currentConditionOffset = 0;
+        private int currentConditionID = 0;
         private ExperimentState currentExperimentState = ExperimentState.WaitingToBegin;
         private List<UserIndex> linkedControllers;
 
@@ -178,6 +206,54 @@ namespace TestSuite
         private double tiltAngle;
 
         #region PublicViewModel
+        public int NextParticipantID
+        {
+            get => nextParticipantID;
+            set
+            {
+                if (value != nextParticipantID)
+                {
+                    nextParticipantID = value;
+                    PropertyChanged.Invoke(this, new PropertyChangedEventArgs("NextParticipantID"));
+                }
+            }
+        }
+        public int CurrentConditionOffset
+        {
+            get => currentConditionOffset;
+            set
+            {
+                if (currentConditionOffset != value)
+                {
+                    currentConditionOffset = value;
+                    PropertyChanged.Invoke(this, new PropertyChangedEventArgs("CurrentConditionOffset"));
+                }
+            }
+        }
+        public int CurrentConditionID
+        {
+            get => currentConditionID;
+            set
+            {
+                if (value != currentConditionID)
+                {
+                    currentConditionID = value;
+                    PropertyChanged.Invoke(this, new PropertyChangedEventArgs("CurrentConditionID"));
+                }
+            }
+        }
+        public int CurrentExperimentID
+        {
+            get => currentExperimentID;
+            set
+            {
+                if (currentExperimentID != value)
+                {
+                    currentExperimentID = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentExperimentID"));
+                }
+            }
+        }
         public ExperimentState CurrentExperimentState
         {
             get => currentExperimentState;
@@ -428,10 +504,10 @@ namespace TestSuite
                     if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Framing;
                     break;
                 case Key.D5:
-                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.VisualEffect;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Pixelation;
                     break;
                 case Key.D6:
-                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.None;
+                    if (IsDebugState()) CurrentGuidingMethod = GuidingMethod.Distortion;
                     break;
 
                 // Manually Switch User Representation
@@ -442,7 +518,12 @@ namespace TestSuite
                     if (IsDebugState()) CurrentUserRepresentation = RepresentationType.MirrorImage;
                     break;
                 case Key.D0:
-                    if (IsDebugState()) CurrentUserRepresentation = RepresentationType.None;
+                    if (IsDebugState())
+                    {
+                        CurrentUserRepresentation = RepresentationType.None;
+                        CurrentGuidingMethod = GuidingMethod.None;
+                    }
+
                     break;
 
                 // Debugging Adjustments
@@ -455,9 +536,9 @@ namespace TestSuite
 
                 // Enable/Disable Debug
                 case Key.D:
-                    if (CurrentExperimentState != ExperimentState.WaitingToBegin && !IsDebugState()) return;
-
                     DebugMode = !DebugMode;
+
+                    if (CurrentExperimentState != ExperimentState.WaitingToBegin && !IsDebugState()) return;
 
                     if (DebugMode)
                     {
@@ -489,6 +570,18 @@ namespace TestSuite
                     {
                         AdvanceState();
                     }
+                    break;
+                // Set Experiment ID
+                case Key.E:
+                    string newExperimentIDStr = (string)PromptDialog.Dialog.Prompt("Enter new Experiment ID [1...]", "New Experiment ID");
+                    int newExperimentID;
+                    if (int.TryParse(newExperimentIDStr, out newExperimentID)) CurrentExperimentID = newExperimentID;
+                    break;
+                // Set Next Participant ID
+                case Key.P:
+                    string newNextParticipantIDStr = (string)PromptDialog.Dialog.Prompt("Enter new Next Participant ID [1...]", "New Participant ID");
+                    int newNextParticipantID;
+                    if (int.TryParse(newNextParticipantIDStr, out newNextParticipantID)) NextParticipantID = newNextParticipantID;
                     break;
 
                 // Exit Application
@@ -589,6 +682,7 @@ namespace TestSuite
                 if ((CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.RedoControllerLink) && !linkedControllers.Contains(controllerIndex))
                 {
                     linkedControllers.Add(controllerIndex);
+                    NextParticipantID++;
                     AdvanceState();
                 }
                 else if (CurrentExperimentState == ExperimentState.ConditionInProgress || CurrentExperimentState == ExperimentState.DebugOverride)
@@ -673,7 +767,8 @@ namespace TestSuite
                     ResetForNextCondition();
 
                     // Last Condition Complete, End Experiment. Otherwise display wait message
-                    if (currentConditionOffset == experimentIDToConditionsMap[currentExperimentID].Length)
+                    int experimentIDCounts = experimentIDToConditionsMap.Count;
+                    if (CurrentConditionOffset == experimentIDToConditionsMap[CurrentExperimentID % experimentIDCounts].Length)
                     {
                         EndExperiment();
                     }
@@ -700,7 +795,7 @@ namespace TestSuite
                     {
                         UserLabelMessage = EXP_COND_WAIT_MESSAGE;
                         ResetForNextCondition();
-                        if (currentConditionOffset == experimentIDToConditionsMap[currentExperimentID].Length)
+                        if (CurrentConditionOffset == experimentIDToConditionsMap[CurrentExperimentID].Length)
                         {
                             EndExperiment();
                         }
@@ -735,8 +830,8 @@ namespace TestSuite
         /// </summary>
         private void EndExperiment()
         {
-            currentExperimentID++;
-            currentConditionOffset = 0;
+            CurrentExperimentID++;
+            CurrentConditionOffset = 0;
             currentParticipantLinked = 0;
             UserLabelMessage = EXP_END_MESSAGE;
             CurrentExperimentState = ExperimentState.ExperimentComplete;
@@ -747,7 +842,7 @@ namespace TestSuite
         /// </summary>
         private void StartNextCondition()
         {
-            SetExperimentConditions(currentExperimentID, currentConditionOffset++);
+            SetExperimentConditions(CurrentExperimentID, CurrentConditionOffset++);
 
             CurrentExperimentState = ExperimentState.ConditionInProgress;
             StartTimers();
@@ -763,8 +858,9 @@ namespace TestSuite
             int numOfCond = idToConditionMap.Count;
             int numOfExp = experimentIDToConditionsMap.Count;
 
-            int nextConditionID = experimentIDToConditionsMap[experimentID % numOfExp][conditionOffset % numOfCond];
-            Tuple<RepresentationType, GuidingMethod> conditionVariables = idToConditionMap[nextConditionID];
+            int conditionID = experimentIDToConditionsMap[experimentID % numOfExp][conditionOffset % numOfCond];
+            CurrentConditionID = conditionID;
+            Tuple<RepresentationType, GuidingMethod> conditionVariables = idToConditionMap[conditionID];
 
             CurrentUserRepresentation = conditionVariables.Item1;
             CurrentGuidingMethod = conditionVariables.Item2;

@@ -106,11 +106,13 @@ namespace TestSuite
 
         private float FrameMargin
         {
-            get => currentRepresentationType == RepresentationType.MirrorImage ? 70 : 0;
+            get => (currentRepresentationType == RepresentationType.MirrorImage ||
+                    currentRepresentationType == RepresentationType.Silhouette) ? 70 : 0;
         }
         private float BottomFrameMargin
         {
-            get => currentRepresentationType == RepresentationType.MirrorImage ? 50 : 0;
+            get => (currentRepresentationType == RepresentationType.MirrorImage ||
+                    currentRepresentationType == RepresentationType.Silhouette) ? 50 : 0;
         }
 
         // The 3D rotation matrix, to adjust points for camera tilt
@@ -131,6 +133,7 @@ namespace TestSuite
             }
         }
 
+        public bool isDebugMode = false;
         public double[] rotateAngles;
         // The Plane Representing what the Camera thinks is the floor
         public Vector4 cameraFloorPlane;
@@ -270,7 +273,10 @@ namespace TestSuite
                                                                 ? MovementDirection.Back : MovementDirection.Forward;
 
                         // Format Instruction Label for User
-                        string instructionLabel = $"Body: {i}\n{horizontalDirection}: {horizontalDistanceCM}cm\n" +
+                        string instructionLabel = "";
+                        if (isDebugMode) instructionLabel += $"Body: {i}\n";
+                        
+                        instructionLabel += $"{horizontalDirection}: {horizontalDistanceCM}cm\n" +
                             $"{depthDirection}: {depthDistanceCM}cm";
 
                         // Update the TextBox to new size for updated string
@@ -960,7 +966,7 @@ namespace TestSuite
         /// <returns>A Camera Space Point, rotated adjusting for camera tilt</returns>
         private CameraSpacePoint rotateCameraPointForTilt(CameraSpacePoint pointToRotate, bool forceRotate = false)
         {
-            return forceRotate || currentRepresentationType != RepresentationType.MirrorImage
+            return forceRotate || (currentRepresentationType != RepresentationType.MirrorImage && currentRepresentationType != RepresentationType.Silhouette)
                 ? RotateCameraPointForTilt(pointToRotate)
                 : pointToRotate;
         }

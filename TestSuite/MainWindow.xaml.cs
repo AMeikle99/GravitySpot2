@@ -140,7 +140,7 @@ namespace TestSuite
         // Controls the rendering of the skeleton representation
         private SkeletonRenderer skeletonRenderer;
         // Controls the rendering of the mirror image representation
-        private MirrorImageRenderer mirrorImageRenderer;
+        private MaskedImageImageRenderer mirrorImageRenderer;
         private List<int> bodyIndexesToShow = new List<int>();
         // Controls rendering the different guiding techniques 
         private GuidingMethodRenderer guidingMethodRenderer;
@@ -191,6 +191,7 @@ namespace TestSuite
                 if (debugMode != value)
                 {
                     debugMode = value;
+                    guidingMethodRenderer.isDebugMode = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("DebugMode"));
                 }
             }
@@ -373,6 +374,7 @@ namespace TestSuite
                             mirrorImageRenderer.ClearAllMirrorImages();
                             break;
                         case RepresentationType.MirrorImage:
+                        case RepresentationType.Silhouette:
                             skeletonRenderer.ClearAllSkeletons();
                             break;
                         case RepresentationType.None:
@@ -476,7 +478,7 @@ namespace TestSuite
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             skeletonRenderer = new SkeletonRenderer(kinectSensor, SkeletonGrid);
-            mirrorImageRenderer = new MirrorImageRenderer(MirrorImage, kinectSensor);
+            mirrorImageRenderer = new MaskedImageImageRenderer(MirrorImage, kinectSensor);
             guidingMethodRenderer = new GuidingMethodRenderer(kinectSensor, SkeletonGrid, EllipseGrid);
             skeletonRenderer.guiding = guidingMethodRenderer;
 
@@ -511,11 +513,14 @@ namespace TestSuite
                     break;
 
                 // Manually Switch User Representation
-                case Key.D8:
+                case Key.D7:
                     if (IsDebugState()) CurrentUserRepresentation = RepresentationType.Skeleton;
                     break;
-                case Key.D9:
+                case Key.D8:
                     if (IsDebugState()) CurrentUserRepresentation = RepresentationType.MirrorImage;
+                    break;
+                case Key.D9:
+                    if (IsDebugState()) CurrentUserRepresentation = RepresentationType.Silhouette;
                     break;
                 case Key.D0:
                     if (IsDebugState())
@@ -636,7 +641,10 @@ namespace TestSuite
                     break;
                 case RepresentationType.MirrorImage:
                     // Renders the Mirror Image Representation
-                    RenderMirrorImage(multiSourceFrame, bodyIndexesToShow);
+                    RenderMaskedImage(multiSourceFrame, bodyIndexesToShow, MaskedImageType.MirrorImage);
+                    break;
+                case RepresentationType.Silhouette:
+                    RenderMaskedImage(multiSourceFrame, bodyIndexesToShow, MaskedImageType.Silhouette);
                     break;
                 case RepresentationType.None:
                     break;
@@ -663,9 +671,11 @@ namespace TestSuite
         /// Renders the users as a Mirror Image Representation
         /// </summary>
         /// <param name="multiSourceFrame">The Multi Source Frame containing the frame data for color, infrared and body index</param>
-        private void RenderMirrorImage(MultiSourceFrame multiSourceFrame, List<int> bodyIndexesToShow)
+        /// <param name="bodyIndexesToShow">The indexes of the bodies whose pixels should be rendered</param>
+        /// <param name="imageType">The type of representation to be shown on screen</param>
+        private void RenderMaskedImage(MultiSourceFrame multiSourceFrame, List<int> bodyIndexesToShow, MaskedImageType imageType)
         {
-            mirrorImageRenderer.UpdateAllMirrorImages(multiSourceFrame, bodyIndexesToShow);
+            mirrorImageRenderer.UpdateAllMaskedImages(multiSourceFrame, bodyIndexesToShow, imageType);
         }
         #endregion
 

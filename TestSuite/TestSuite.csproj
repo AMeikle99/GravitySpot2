@@ -151,7 +151,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="VisibilityConverters.cs" />
-    <Compile Include="MirrorImageRenderer.cs" />
+    <Compile Include="MaskedImageImageRenderer.cs" />
     <Compile Include="UserController.cs" />
     <Compile Include="GuidingMethodRenderer.cs" />
     <Compile Include="SkeletonRenderer.cs" />

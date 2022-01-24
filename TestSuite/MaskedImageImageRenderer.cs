@@ -13,7 +13,13 @@ using System.Windows;
 // Adapted for this use case
 namespace TestSuite
 {
-    internal class MirrorImageRenderer
+
+    public enum MaskedImageType
+    {
+        MirrorImage,
+        Silhouette
+    }
+    internal class MaskedImageImageRenderer
     {
         private const int BytesPerPixel = 4;
 
@@ -26,13 +32,13 @@ namespace TestSuite
         DepthSpacePoint[] colorToDepthPoints;
 
         /// <summary>
-        /// Instantiates a MirrorImageRenderer, in charge of rendering the body mask for each person present
+        /// Instantiates a MaskedImageRenderer, in charge of rendering the body mask for each person present
         /// </summary>
-        /// <param name="mirrorImageCanvas">The Image to render the User Mirror Image onto</param>
+        /// <param name="maskedImageCanvas">The Image to render the User Mirror Image onto</param>
         /// <param name="kinectSensor">A kinect sensor representing a real world kinect device</param>
-        public MirrorImageRenderer(Image mirrorImageCanvas, KinectSensor kinectSensor)
+        public MaskedImageImageRenderer(Image maskedImageCanvas, KinectSensor kinectSensor)
         {
-            this.mirrorImageCanvas = mirrorImageCanvas;
+            this.mirrorImageCanvas = maskedImageCanvas;
             this.kinectSensor = kinectSensor;
 
             FrameDescription colorFrameDesc = kinectSensor.ColorFrameSource.FrameDescription;
@@ -46,7 +52,8 @@ namespace TestSuite
         /// </summary>
         /// <param name="frame">The multi source frame that contains all the relevant frame types</param>
         /// <param name="bodyIndexesToShow">A list of valid body indexes to show</param>
-        public void UpdateAllMirrorImages(MultiSourceFrame frame, List<int> bodyIndexesToShow)
+        /// <param name="imageType">The type of body masked image to show, either Mirror or Colored Silhouette</param>
+        public void UpdateAllMaskedImages(MultiSourceFrame frame, List<int> bodyIndexesToShow, MaskedImageType imageType)
         {
             ColorFrame colorFrame = null;
             BodyIndexFrame bodyIndexFrame = null;
@@ -82,7 +89,7 @@ namespace TestSuite
                 kinectSensor.CoordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthBuffer.UnderlyingBuffer, depthBufferSize, colorToDepthPoints);
                 colorFrame.CopyConvertedFrameDataToIntPtr(bitmapImage.BackBuffer, (uint)colorToDepthPoints.Length * BytesPerPixel, ColorImageFormat.Bgra);
 
-                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow);
+                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType);
                 UpdateBitmapImage();
             }
             // IMPORTANT - Dispose of all frames and buffers, otherwise there is a severe fps hit
@@ -113,7 +120,8 @@ namespace TestSuite
         /// <param name="pixelHeight">How many pixels tall the body index frame is</param>
         /// <param name="bodyIndexBuffer">Object which holds the bodyIndexFrame underlying buffer (Acquired with LockImageBuffer())</param>
         /// <param name="bodyIndexesToShow">A list of all the valid body indexes to show</param>
-        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow)
+        /// <param name="imageType">The type of body masked image to show, either Mirror or Colored Silhouette</param>
+        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow, MaskedImageType imageType)
         {
             // Create a static pointer to the data buffer which can be offset to access a specific entry
             IntPtr bodyIndexByteAccess = bodyIndexBuffer.UnderlyingBuffer;
@@ -149,9 +157,21 @@ namespace TestSuite
                             int depthPixelIndex = (depthY * pixelWidth) + depthX;
 
                             // Skip if value is not 255 (255 is the No Body Value, otherwise it would be the body index)
-                            int bodyIndex = bodyIndexBytePtr[depthPixelIndex];
+                            int bodyIndex = bodyIndexBytePtr[depthPixelIndex];                 
+
                             if (bodyIndexesToShow.Contains(bodyIndex))
                             {
+                                if (imageType == MaskedImageType.Silhouette)
+                                {
+                                    byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
+                                    Color bodyColor = SkeletonRenderer.BodyColor[bodyIndex];
+
+                                    // Byte 0: B, 1: G, 2: R, 3: A (alpha)
+                                    *pixelPointer++ = bodyColor.B;
+                                    *pixelPointer++ = bodyColor.G;
+                                    *pixelPointer++ = bodyColor.R;
+                                    *pixelPointer++ = 255;
+                                }
                                 continue;
                             }
                         }

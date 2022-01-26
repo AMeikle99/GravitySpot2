@@ -1,20 +1,19 @@
 ﻿using Microsoft.Kinect;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
-using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
 using Vector = System.Windows.Vector;
 using Vector4 = Microsoft.Kinect.Vector4;
+using Bitmap = System.Drawing.Bitmap;
+
+using System.Windows.Interop;
 
 namespace TestSuite
 {
@@ -103,6 +102,10 @@ namespace TestSuite
         private IDictionary<int, bool> isShowingBodyFrame;
         private bool updateBodyFrames = false;
         private IDictionary<Line, Storyboard> frameStoryboards;
+
+        // Pixelation & Distortion Guiding Method
+        private IDictionary<int, Tuple<Border, Image>> imageEffectMethodRenderable;
+        private Bitmap imageEffectOriginalBitmap;
 
         private float FrameMargin
         {
@@ -244,6 +247,12 @@ namespace TestSuite
                 ColorSpacePoint guideJointColorPoint = kinectSensor.CoordinateMapper
                                             .MapCameraPointToColorSpace(guideJointCameraPoint);
 
+                if (double.IsInfinity(guideJointColorPoint.X) || double.IsInfinity(guideJointColorPoint.Y) ||
+                    double.IsInfinity(trackingJointColorPoint.X) || double.IsInfinity(trackingJointColorPoint.Y))
+                {
+                    continue;
+                }
+
                 Point bodyPoint = new Point { X = trackingJoint.Position.X, Y = trackingJoint.Position.Z };
                 currentBodyPositions[i] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
 
@@ -377,6 +386,32 @@ namespace TestSuite
                             updateBodyFrames = true;
                         }
                         break;
+
+                    // --- Render Pixelate Method
+                    case GuidingMethod.Pixelation:
+                        Border imageEffectBorder = imageEffectMethodRenderable[i].Item1;
+                        Image imageEffectRenderable = imageEffectMethodRenderable[i].Item2;
+
+                        imageEffectBorder.Visibility = Visibility.Visible;
+                        imageEffectRenderable.Visibility = Visibility.Visible;
+
+                        // Copy Original Bitmap and apply pixelation
+                        // Effect Clamps to 1 when effect size is 1/25 OR 0.04
+                        Bitmap originalTmp = (Bitmap)imageEffectOriginalBitmap.Clone();
+                        int effectSize = Math.Max((int)(25 * scaleFactor), 1);
+                        ImageEffectRenderer.ApplyNormalPixelate(ref originalTmp, new System.Drawing.Size(effectSize, effectSize));
+                        
+                        // Create a BitmapSource from our pixelated bitmap
+                        // Since Pixelation creates larger block size, there is an unpixelated border
+                        // Crop this from width and height (remainder of effect size from Width/Height) I.e. 10 px wide with effect size of 3 has 3 pixels and 1 remainder in border
+                        BitmapSource pixelatedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmp.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                        pixelatedBitmap = new CroppedBitmap(pixelatedBitmap, new Int32Rect(0, 0, originalTmp.Width - originalTmp.Width % effectSize, originalTmp.Height - originalTmp.Height % effectSize));
+
+                        imageEffectRenderable.Source = pixelatedBitmap;
+
+                        Canvas.SetLeft(imageEffectBorder, guideJointColorPoint.X - imageEffectBorder.Width / 2);
+                        Canvas.SetTop(imageEffectBorder, guideJointColorPoint.Y - imageEffectBorder.Height / 2);
+                        break;
                     default:
                         break;
 
@@ -391,6 +426,9 @@ namespace TestSuite
             }
         }
 
+        
+
+        #region UpdateFramePosition
         /// <summary>
         /// Sets the Framing method's Frame to encompass the User Body
         /// </summary>
@@ -587,7 +625,9 @@ namespace TestSuite
                 UpdateFrameLines(frameLines, targetFrameLinePoints, Visibility.Visible, true);
             }
         }
+        #endregion
 
+        #region HideGuidingMethods
         /// <summary>
         /// Hides the currently showing Guiding Method for the specified <paramref name="bodyIndex"/>
         /// </summary>
@@ -617,7 +657,13 @@ namespace TestSuite
                         frameLine.Visibility = Visibility.Collapsed;
                     }
                     isShowingBodyFrame[bodyIndex] = false;
-
+                    break;
+                case GuidingMethod.Pixelation:
+                case GuidingMethod.Distortion:
+                    Border imageEffectBorder = imageEffectMethodRenderable[bodyIndex].Item1;
+                    Image imageEffectRenderable = imageEffectMethodRenderable[bodyIndex].Item2;
+                    imageEffectBorder.Visibility = Visibility.Collapsed;
+                    imageEffectRenderable.Visibility = Visibility.Collapsed;
                     break;
                 default:
                     break;
@@ -649,6 +695,7 @@ namespace TestSuite
                 HideGuidingMethod(guidingMethod, i);
             }
         }
+        #endregion
 
         #region InitialiseGuidingMethodObjects
         /// <summary>
@@ -667,6 +714,8 @@ namespace TestSuite
             frameMethodRenderable = new Dictionary<int, IDictionary<FramePosition, Line>>();
             frameMethodCornerOffsets = new Dictionary<int, IDictionary<FrameCorner, Vector3>>();
             frameStoryboards = new Dictionary<Line, Storyboard>();
+            imageEffectMethodRenderable = new Dictionary<int, Tuple<Border, Image>>();
+            imageEffectOriginalBitmap = new Bitmap("Assets/flower.jpg");
             bodyTrackingPoint = new Dictionary<int, CameraSpacePoint>();
             isShowingBodyFrame = new Dictionary<int, bool>();
 
@@ -685,6 +734,9 @@ namespace TestSuite
 
                 // --- Frame Method ---
                 CreateFrameMethodRenderable(i);
+
+                // --- Image Effect Methods (Pixelation & Distortion) ---
+                CreateImageEffectMethodRenderable(i);
 
                 isShowingBodyFrame.Add(i, false);
             }
@@ -775,6 +827,39 @@ namespace TestSuite
 
             underlayCanvas.Children.Add(ellipseGuide);
             ellipseMethodRenderable.Add(bodyIndex, ellipseGuide);
+        }
+
+        /// <summary>
+        /// Creates the Image Effect Objects for a specified <paramref name="bodyIndex"/>
+        /// </summary>
+        /// <param name="bodyIndex">The index of the specified body</param>
+        private void CreateImageEffectMethodRenderable(int bodyIndex)
+        {
+            Image imageEffectImage = new Image
+            {
+                Source = Imaging.CreateBitmapSourceFromHBitmap(imageEffectOriginalBitmap.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, null),
+                Width = 160 * 1.5,
+                Height = 135 * 1.5,
+                MaxWidth = 160 * 1.5,
+                MaxHeight = 135 * 1.5,
+                Stretch = Stretch.UniformToFill,
+                Visibility = Visibility.Collapsed,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            Border imageEffectImageBorder = new Border
+            {
+                BorderBrush = new SolidColorBrush(SkeletonRenderer.BodyColor[bodyIndex]),
+                BorderThickness = new Thickness(2),
+                Child = imageEffectImage,
+                Width = imageEffectImage.MaxWidth,
+                Height = imageEffectImage.MaxHeight,
+                Visibility = Visibility.Collapsed
+            };
+
+            overlayCanvas.Children.Add(imageEffectImageBorder);
+            imageEffectMethodRenderable.Add(bodyIndex, new Tuple<Border, Image>(imageEffectImageBorder, imageEffectImage));
         }
         #endregion
 
@@ -893,6 +978,7 @@ namespace TestSuite
         }
         #endregion
 
+        #region HelperMethods
         /// <summary>
         /// Debugging: Get the position of the body with the lowest index and is also tracked
         /// </summary>
@@ -984,5 +1070,6 @@ namespace TestSuite
             //return pointToRotate;
             return new CameraSpacePoint { X = rotatedPointVector.X, Y = rotatedPointVector.Y, Z = rotatedPointVector.Z };
         }
+        #endregion
     }
 }

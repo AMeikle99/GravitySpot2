@@ -1,0 +1,9 @@
+﻿The work contained in this Folder 3rdParty/Distortion effect is not my own (Aiden Meikle) but instead has been integrated into this TestSuite as per the affordances in the CPOL license the source code was released under.
+
+Full Credit for code contained in this directory goes to:
+- Amarnath S, 
+- Prasad R V, 
+- Raghavendrasri, 
+- BhumikaThatte
+
+The Project can be accessed here: https://www.codeproject.com/Articles/996192/Some-Cool-Image-Effects

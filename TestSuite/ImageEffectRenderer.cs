@@ -5,6 +5,10 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
+using Algorithm;
 
 namespace TestSuite
 {
@@ -17,7 +21,7 @@ namespace TestSuite
         /// </summary>
         /// <param name="bmp">Reference to the bitmap image to be pixelated</param>
         /// <param name="squareSize">The size of the pixelation effect (1,1) would be no effect</param>
-        public static void ApplyNormalPixelate(ref Bitmap bmp, Size squareSize)
+        public static void ApplyNormalPixelate(ref Bitmap bmp, System.Drawing.Size squareSize)
         {
             Bitmap TempBmp = (Bitmap)bmp.Clone();
 
@@ -70,6 +74,19 @@ namespace TestSuite
 
             bmp.UnlockBits(bmpData);
             TempBmp.UnlockBits(TempBmpData);
+        }
+
+        public static BitmapSource ApplyDistortion(string filename, double effectSize)
+        {
+            ImageData data = new ImageData();
+            string err;
+            data.LoadImage(filename, out err);
+
+            WaveAlgorithm alg = new WaveAlgorithm();
+            alg.SetImageData(data);
+            var options = alg.GetOptions();
+            List<AlgorithmParameter> parameters =  new List<AlgorithmParameter> { options[0].Options["Wave 1"] };
+            return alg.ApplyEffect(parameters, effectSize);
         }
 
     }

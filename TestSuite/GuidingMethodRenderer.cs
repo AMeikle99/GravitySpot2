@@ -412,6 +412,20 @@ namespace TestSuite
                         Canvas.SetLeft(imageEffectBorder, guideJointColorPoint.X - imageEffectBorder.Width / 2);
                         Canvas.SetTop(imageEffectBorder, guideJointColorPoint.Y - imageEffectBorder.Height / 2);
                         break;
+                    case GuidingMethod.Distortion:
+                        Border imageDistortionEffectBorder = imageEffectMethodRenderable[i].Item1;
+                        Image imageDistortionEffectRenderable = imageEffectMethodRenderable[i].Item2;
+
+                        imageDistortionEffectBorder.Visibility = Visibility.Visible;
+                        imageDistortionEffectRenderable.Visibility = Visibility.Visible;
+
+                        BitmapSource distoretBitmap = ImageEffectRenderer.ApplyDistortion("Assets/kempegowda.png", scaleFactor);
+
+                        imageDistortionEffectRenderable.Source = distoretBitmap;
+
+                        Canvas.SetLeft(imageDistortionEffectBorder, guideJointColorPoint.X - imageDistortionEffectBorder.Width / 2);
+                        Canvas.SetTop(imageDistortionEffectBorder, guideJointColorPoint.Y - imageDistortionEffectBorder.Height / 2);
+                        break;
                     default:
                         break;
 
@@ -715,7 +729,7 @@ namespace TestSuite
             frameMethodCornerOffsets = new Dictionary<int, IDictionary<FrameCorner, Vector3>>();
             frameStoryboards = new Dictionary<Line, Storyboard>();
             imageEffectMethodRenderable = new Dictionary<int, Tuple<Border, Image>>();
-            imageEffectOriginalBitmap = new Bitmap("Assets/flower.jpg");
+            imageEffectOriginalBitmap = new Bitmap("Assets/kempegowda.png");
             bodyTrackingPoint = new Dictionary<int, CameraSpacePoint>();
             isShowingBodyFrame = new Dictionary<int, bool>();
 

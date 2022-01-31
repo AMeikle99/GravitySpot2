@@ -148,6 +148,14 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Compile Include="3rdParty\DistortionEffect\AlgorithmOption.cs" />
+    <Compile Include="3rdParty\DistortionEffect\AlgorithmParameter.cs" />
+    <Compile Include="3rdParty\DistortionEffect\Algorithm\AlgorithmBase.cs" />
+    <Compile Include="3rdParty\DistortionEffect\Algorithm\ImageData.cs" />
+    <Compile Include="3rdParty\DistortionEffect\Algorithm\WaveAlgorithm.cs" />
+    <Compile Include="3rdParty\DistortionEffect\Effects.cs" />
+    <Compile Include="3rdParty\DistortionEffect\IImageProcessingAlgorithm.cs" />
+    <Compile Include="3rdParty\DistortionEffect\ImageProcessingAlgorithm.cs" />
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -204,10 +212,14 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="3rdParty\DistortionEffect\AttributionOfWork.txt" />
     <Content Include="Assets\arrow_guide.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\flower.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\kempegowda.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\test_color_chart.jpg">
@@ -217,5 +229,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

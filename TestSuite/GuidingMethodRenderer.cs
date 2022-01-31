@@ -315,6 +315,7 @@ namespace TestSuite
                         double rotateAngle = Vector.AngleBetween(baseDirection, moveToTargetVector);
                         rotateAngles[i] = rotateAngle;
 
+                        scaleFactor = Math.Min(scaleFactor, 1);
                         // Scale First
                         // Begins shrinking when 1m left and less
                         ScaleTransform arrowScaleTransform = new ScaleTransform(scaleFactor, scaleFactor,
@@ -398,7 +399,8 @@ namespace TestSuite
                         // Copy Original Bitmap and apply pixelation
                         // Effect Clamps to 1 when effect size is 1/25 OR 0.04
                         Bitmap originalTmp = (Bitmap)imageEffectOriginalBitmap.Clone();
-                        int effectSize = Math.Max((int)(25 * scaleFactor), 1);
+                        int smallerSideSize = Math.Min(originalTmp.Width, originalTmp.Height);
+                        int effectSize = Math.Min(Math.Max((int)(25 * scaleFactor), 1), smallerSideSize / 3);
                         ImageEffectRenderer.ApplyNormalPixelate(ref originalTmp, new System.Drawing.Size(effectSize, effectSize));
                         
                         // Create a BitmapSource from our pixelated bitmap
@@ -411,6 +413,22 @@ namespace TestSuite
 
                         Canvas.SetLeft(imageEffectBorder, guideJointColorPoint.X - imageEffectBorder.Width / 2);
                         Canvas.SetTop(imageEffectBorder, guideJointColorPoint.Y - imageEffectBorder.Height / 2);
+                        break;
+                    case GuidingMethod.Distortion:
+                        Border imageDistortionEffectBorder = imageEffectMethodRenderable[i].Item1;
+                        Image imageDistortionEffectRenderable = imageEffectMethodRenderable[i].Item2;
+
+                        imageDistortionEffectBorder.Visibility = Visibility.Visible;
+                        imageDistortionEffectRenderable.Visibility = Visibility.Visible;
+
+                        Bitmap originalTmpDistort = (Bitmap)imageEffectOriginalBitmap.Clone();
+                        ImageEffectRenderer.ApplyDistortion(ref originalTmpDistort, scaleFactor);
+
+                        BitmapSource distortedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmpDistort.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                        imageDistortionEffectRenderable.Source = distortedBitmap;
+
+                        Canvas.SetLeft(imageDistortionEffectBorder, guideJointColorPoint.X - imageDistortionEffectBorder.Width / 2);
+                        Canvas.SetTop(imageDistortionEffectBorder, guideJointColorPoint.Y - imageDistortionEffectBorder.Height / 2);
                         break;
                     default:
                         break;
@@ -1031,15 +1049,16 @@ namespace TestSuite
         /// Using a scaling function, calculate the factor to scale a guide object by (based on distance to target)
         /// </summary>
         /// <param name="distanceToTarget">Distance of Current Point to Target Point (metres)</param>
-        /// <returns>ScaleFactor: 0.0 to 1.0</returns>
+        /// <returns>ScaleFactor: 0.0 to inf</returns>
         private double GuideScaleFactor(double distanceToTarget)
         {
             // S-Curve Function: From GravitySpot Paper (significantly most accurate)
             // URL: https://doi.org/10.1145/2807442.2807490
             double scaleFactor = (Math.Pow(2 * (distanceToTarget - 0.5), 7) + 2 * (distanceToTarget - 0.5) + 3.2) / 4;
 
-            // Clamp to 0,1 range
-            scaleFactor = Math.Max(0.0, Math.Min(scaleFactor, 1.0));
+            // Clamp to 0,(scaleFactor/distance) range
+            scaleFactor = Math.Max(0.0, scaleFactor);
+            scaleFactor = scaleFactor > 1 ? distanceToTarget : scaleFactor;
 
             return scaleFactor;
         }

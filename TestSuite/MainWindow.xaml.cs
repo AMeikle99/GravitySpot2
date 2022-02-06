@@ -123,6 +123,7 @@ namespace TestSuite
         private int currentConditionOffset = 0;
         private int currentConditionID = 0;
         private Point[] targetPoints;
+        private List<UserIndex> conditionStoppedControllerIndices;
         private ExperimentState currentExperimentState = ExperimentState.WaitingToBegin;
         private List<UserIndex> linkedControllers;
 
@@ -537,6 +538,7 @@ namespace TestSuite
                     float newHeightOffset;
                     if (float.TryParse(newHeightOffsetStr, out newHeightOffset)) guidingMethodRenderer.CameraHeightOffset = newHeightOffset;
                     break;
+                // Generate New Target Points
                 case Key.R:
                     if (IsDebugState()) GenerateNewTargetPoints();
                     break;
@@ -697,10 +699,16 @@ namespace TestSuite
                     NextParticipantID++;
                     AdvanceState();
                 }
-                else if (CurrentExperimentState == ExperimentState.ConditionInProgress || CurrentExperimentState == ExperimentState.DebugOverride)
+                else if ((CurrentExperimentState == ExperimentState.ConditionInProgress && !conditionStoppedControllerIndices.Contains(controllerIndex)) || CurrentExperimentState == ExperimentState.DebugOverride)
                 {
+                    conditionStoppedControllerIndices.Add(controllerIndex);
                     controllers[(int)controllerIndex].StopTiming();
                     BodyFinalDistance = Math.Round(BodyDistance * 100, 2);
+
+                    if (conditionStoppedControllerIndices.Count == userCountForExperiment)
+                    {
+                        AdvanceState();
+                    }
                 }
             });
         }
@@ -834,6 +842,7 @@ namespace TestSuite
             List<Body> allBodiesList = allBodies.ToList();
             currentTrackedBodyIDs = trackedBodies.Select(body => allBodiesList.IndexOf(body)).ToArray();
             linkedControllers = new List<UserIndex>(userCountForExperiment);
+            conditionStoppedControllerIndices = new List<UserIndex>(userCountForExperiment);
             AdvanceState();
         }
 
@@ -899,6 +908,8 @@ namespace TestSuite
             CurrentUserRepresentation = RepresentationType.None;
             CurrentGuidingMethod = GuidingMethod.None;
             CurrentExperimentState = ExperimentState.WaitingToStartCondition;
+
+            conditionStoppedControllerIndices.Clear();
         }
 
         /// <summary>

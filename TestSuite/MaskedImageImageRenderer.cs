@@ -138,48 +138,54 @@ namespace TestSuite
 
                 int colorPixelLength = colorToDepthPoints.Length;
 
-                // Iterate through each color pixel (which has been converted to a depth point equivalent, meaning some depth points may map to multiple color points)
-                for (int pixelIndex = 0; pixelIndex < colorPixelLength; ++pixelIndex)
+                int chunks = 4;
+                int chunkSize = colorPixelLength / chunks;
+
+                Parallel.For(0, chunks, new ParallelOptions(), (iter) =>
                 {
-                    float colorToDepthX = colorToDepthPoints[pixelIndex].X;
-                    float colorToDepthY = colorToDepthPoints[pixelIndex].Y;
-
-                    // Check the X/Y position is valid (-inf is the invalid value representation)
-                    if (!float.IsNegativeInfinity(colorToDepthX) && !float.IsNegativeInfinity(colorToDepthY))
+                    // Iterate through each color pixel (which has been converted to a depth point equivalent, meaning some depth points may map to multiple color points)
+                    for (int pixelIndex = iter * chunkSize; pixelIndex < (iter +1) * chunkSize; ++pixelIndex)
                     {
-                        int depthX = (int)colorToDepthX;
-                        int depthY = (int)colorToDepthY;
+                        float colorToDepthX = colorToDepthPoints[pixelIndex].X;
+                        float colorToDepthY = colorToDepthPoints[pixelIndex].Y;
 
-                        // Check that the value is in a valid range
-                        if (depthX >= 0 && depthY >= 0 && depthX < pixelWidth && depthY < pixelHeight)
+                        // Check the X/Y position is valid (-inf is the invalid value representation)
+                        if (!float.IsNegativeInfinity(colorToDepthX) && !float.IsNegativeInfinity(colorToDepthY))
                         {
-                            // Calculate the row/col offset for the pixel to access (Y is row, X is Col)
-                            int depthPixelIndex = (depthY * pixelWidth) + depthX;
+                            int depthX = (int)colorToDepthX;
+                            int depthY = (int)colorToDepthY;
 
-                            // Skip if value is not 255 (255 is the No Body Value, otherwise it would be the body index)
-                            int bodyIndex = bodyIndexBytePtr[depthPixelIndex];                 
-
-                            if (bodyIndexesToShow.Contains(bodyIndex))
+                            // Check that the value is in a valid range
+                            if (depthX >= 0 && depthY >= 0 && depthX < pixelWidth && depthY < pixelHeight)
                             {
-                                if (imageType == MaskedImageType.Silhouette)
-                                {
-                                    byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
-                                    Color bodyColor = SkeletonRenderer.BodyColor[bodyIndex];
+                                // Calculate the row/col offset for the pixel to access (Y is row, X is Col)
+                                int depthPixelIndex = (depthY * pixelWidth) + depthX;
 
-                                    // Byte 0: B, 1: G, 2: R, 3: A (alpha)
-                                    *pixelPointer++ = bodyColor.B;
-                                    *pixelPointer++ = bodyColor.G;
-                                    *pixelPointer++ = bodyColor.R;
-                                    *pixelPointer++ = 255;
+                                // Skip if value is not 255 (255 is the No Body Value, otherwise it would be the body index)
+                                int bodyIndex = bodyIndexBytePtr[depthPixelIndex];
+
+                                if (bodyIndexesToShow.Contains(bodyIndex))
+                                {
+                                    if (imageType == MaskedImageType.Silhouette)
+                                    {
+                                        byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
+                                        Color bodyColor = SkeletonRenderer.BodyColor[bodyIndex];
+
+                                        // Byte 0: B, 1: G, 2: R, 3: A (alpha)
+                                        *pixelPointer++ = bodyColor.B;
+                                        *pixelPointer++ = bodyColor.G;
+                                        *pixelPointer++ = bodyColor.R;
+                                        *pixelPointer++ = 255;
+                                    }
+                                    continue;
                                 }
-                                continue;
                             }
                         }
-                    }
 
-                    // If made it this far the pixel is invalid or doesn't belong to a body. Make it transparent
-                    bitmapPixelsPtr[pixelIndex] = 0;
-                }
+                        // If made it this far the pixel is invalid or doesn't belong to a body. Make it transparent
+                        bitmapPixelsPtr[pixelIndex] = 0;
+                    }
+                });
             }
         }
 

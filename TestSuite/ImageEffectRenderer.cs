@@ -82,6 +82,56 @@ namespace TestSuite
         /// </summary>
         /// <param name="bmp">>Reference to the bitmap image to be distorted</param>
         /// <param name="effectSize">The scaling effect to apply to the distortion effect 0...inf</param>
+        public static void ApplyDistortionParallel(ref Bitmap bmp, double effectSize)
+        {
+            // Temporary copy of the bitmao image
+            Bitmap TempBmp = (Bitmap)bmp.Clone();
+
+            unsafe
+            {
+                // Get the Underlying bitmap data
+                BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                BitmapData TempBmpData = TempBmp.LockBits(new Rectangle(0, 0, TempBmp.Width, TempBmp.Height), ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+
+                // Pointers to the data
+                byte* ptr = (byte*)bmpData.Scan0.ToPointer();
+                byte* tempPtr = (byte*)TempBmpData.Scan0.ToPointer();
+                int stride = bmpData.Stride;
+
+                int width = bmp.Width;
+                int height = bmp.Height;
+
+                Parallel.For(0, height, new ParallelOptions(), (row) =>
+                {
+                    // Pointer to the first element in that row
+                    byte* bmpRowPtr = ptr + (row * stride);
+                    byte* bmpTmpRowPtr = tempPtr + (row * stride);
+
+                    // Each row has its columns shifted according to a sin wave of the current row.
+                    // This results in some rows shifting left/right and the strength of the shift increasing as the peak/trough is reached
+                    double rowRadians = row * (Math.PI / 180);
+                    int adjustedEffectSize = (int)Math.Floor(20 * effectSize * Math.Sin(12 * effectSize * rowRadians));
+
+                    // Copy over each byte for each pixel in each column
+                    for (int col = 0; col < width; col++)
+                    {
+
+                        int tmpColOffset = Mod((col + adjustedEffectSize) * 3, stride);
+                        int colOffset = col * 3;
+
+                        *(bmpRowPtr + colOffset) = *(bmpTmpRowPtr + tmpColOffset);
+                        *(bmpRowPtr + colOffset + 1) = *(bmpTmpRowPtr + tmpColOffset + 1);
+                        *(bmpRowPtr + colOffset + 2) = *(bmpTmpRowPtr + tmpColOffset + 2);
+                    }
+                });
+
+                bmp.UnlockBits(bmpData);
+                TempBmp.UnlockBits(TempBmpData);
+                TempBmp.Dispose();
+            }
+            
+        }
+
         public static void ApplyDistortion(ref Bitmap bmp, double effectSize)
         {
             // Temporary copy of the bitmao image
@@ -98,8 +148,10 @@ namespace TestSuite
                 byte* tempPtr = (byte*)TempBmpData.Scan0.ToPointer();
                 int stride = bmpData.Stride;
 
-                // Iterate through every row
-                for (int row = 0; row < bmp.Height; row++)
+                int width = bmp.Width;
+                int height = bmp.Height;
+
+                for (int row = 0; row < height; row++)
                 {
                     // Pointer to the first element in that row
                     byte* bmpRowPtr = ptr + (row * stride);
@@ -111,7 +163,7 @@ namespace TestSuite
                     int adjustedEffectSize = (int)Math.Floor(20 * effectSize * Math.Sin(12 * effectSize * rowRadians));
 
                     // Copy over each byte for each pixel in each column
-                    for (int col = 0; col < bmp.Width; col++)
+                    for (int col = 0; col < width; col++)
                     {
 
                         int tmpColOffset = Mod((col + adjustedEffectSize) * 3, stride);
@@ -121,14 +173,13 @@ namespace TestSuite
                         *(bmpRowPtr + colOffset + 1) = *(bmpTmpRowPtr + tmpColOffset + 1);
                         *(bmpRowPtr + colOffset + 2) = *(bmpTmpRowPtr + tmpColOffset + 2);
                     }
-                    
                 }
 
                 bmp.UnlockBits(bmpData);
                 TempBmp.UnlockBits(TempBmpData);
                 TempBmp.Dispose();
             }
-            
+
         }
 
         /// <summary>

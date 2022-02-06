@@ -422,7 +422,7 @@ namespace TestSuite
                         imageDistortionEffectRenderable.Visibility = Visibility.Visible;
 
                         Bitmap originalTmpDistort = (Bitmap)imageEffectOriginalBitmap.Clone();
-                        ImageEffectRenderer.ApplyDistortion(ref originalTmpDistort, scaleFactor);
+                        ImageEffectRenderer.ApplyDistortionParallel(ref originalTmpDistort, scaleFactor);
 
                         BitmapSource distortedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmpDistort.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
                         imageDistortionEffectRenderable.Source = distortedBitmap;

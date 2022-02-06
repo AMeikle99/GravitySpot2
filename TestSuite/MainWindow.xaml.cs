@@ -122,6 +122,7 @@ namespace TestSuite
         private int userCountForExperiment = 0;
         private int currentConditionOffset = 0;
         private int currentConditionID = 0;
+        private Point[] targetPoints;
         private ExperimentState currentExperimentState = ExperimentState.WaitingToBegin;
         private List<UserIndex> linkedControllers;
 
@@ -197,7 +198,6 @@ namespace TestSuite
             }
         }
         private bool debugMode;
-        private Point[] randomPoints;
         private Point randomPoint;
         private Point bodyPoint;
         private double bodyPointY;
@@ -403,7 +403,7 @@ namespace TestSuite
             {
                 if (guidingMethodRenderer == null) return new Point(0, 0);
                 int bodyIndex = guidingMethodRenderer.PositionOfFirstTrackedBody().Item1;
-                return bodyIndex == -1 ? new Point(0, 0) : randomPoints[bodyIndex];
+                return bodyIndex == -1 ? new Point(0, 0) : targetPoints[bodyIndex];
             }
             set
             {
@@ -467,8 +467,7 @@ namespace TestSuite
 
             allBodies = new Body[bodyCount];
             currentTrackedBodyIDs = new int[bodyCount];
-            int[] bodyRange = Enumerable.Range(0, bodyCount).ToArray();
-            randomPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
+            GenerateNewTargetPoints();
 
             UserIndex[] controllerRange = { UserIndex.One, UserIndex.Two, UserIndex.Three, UserIndex.Four};
             controllers = controllerRange.Select(i => new UserController(i, this)).ToArray();
@@ -537,6 +536,9 @@ namespace TestSuite
                     string newHeightOffsetStr = (string)PromptDialog.Dialog.Prompt("Enter Height Offset: ", "New Height Offset");
                     float newHeightOffset;
                     if (float.TryParse(newHeightOffsetStr, out newHeightOffset)) guidingMethodRenderer.CameraHeightOffset = newHeightOffset;
+                    break;
+                case Key.R:
+                    if (IsDebugState()) GenerateNewTargetPoints();
                     break;
 
                 // Enable/Disable Debug
@@ -726,7 +728,7 @@ namespace TestSuite
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
         private void RenderGuidingMethod(Body[] bodies)
         {
-            guidingMethodRenderer.RenderGuidingMethod(bodies, randomPoints, bodyIndexesToShow);
+            guidingMethodRenderer.RenderGuidingMethod(bodies, targetPoints, bodyIndexesToShow);
         }
         #endregion
 
@@ -853,9 +855,21 @@ namespace TestSuite
         private void StartNextCondition()
         {
             SetExperimentConditions(CurrentExperimentID, CurrentConditionOffset++);
+            GenerateNewTargetPoints();
 
             CurrentExperimentState = ExperimentState.ConditionInProgress;
             StartTimers();
+        }
+
+        /// <summary>
+        /// Generates new Target Points for all Body Indexes
+        /// </summary>
+        private void GenerateNewTargetPoints()
+        {
+            int bodyCount = kinectSensor.BodyFrameSource.BodyCount;
+            int[] bodyRange = Enumerable.Range(0, bodyCount).ToArray();
+
+            targetPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
         }
 
         /// <summary>

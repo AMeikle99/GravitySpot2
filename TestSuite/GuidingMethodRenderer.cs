@@ -210,13 +210,14 @@ namespace TestSuite
         /// </summary>
         /// <param name="bodies">An array of Body objects, populated with GetAndRefreshBodyData()</param>
         /// <param name="targetPoints">The SweetSpot points for each Body</param>
-        public void RenderGuidingMethod(Body[] bodies, Point[] targetPoints, List<int> indexesToShow)
+        /// <param name="indexesToShow">The Body indexes which should be allowed to be shown</param>
+        /// <param name="bodyIndexToParticipantMap">A mapping of body index to participant index, to keep consistency in colors</param>
+        public void RenderGuidingMethod(Body[] bodies, Point[] targetPoints, List<int> indexesToShow, IDictionary<int, int> bodyIndexToParticipantMap)
         {
             for (int i = 0; i < bodies.Length; i++)
             {
                 Body body = bodies[i];
-                Point targetPoint = targetPoints[i];
-
+               
                 // The possible joints to use for body tracking and rendering the guiding method object
                 JointType[] bodyPositionPossibleJoints = { JointType.SpineBase, JointType.SpineMid, JointType.SpineShoulder,
                                                     JointType.Neck, JointType.Head };
@@ -225,10 +226,17 @@ namespace TestSuite
                 // If not being tracked or it is not in the specified valid indexes then hide that body's guiding object
                 if (!body.IsTracked || !indexesToShow.Contains(i))
                 {
-                    HideGuidingMethod(currentGuidingMethod, i);
-                    currentBodyPositions[i] = new Tuple<Point, bool>(new Point(0, 0), false);
+                    if (bodyIndexToParticipantMap.Keys.Contains(i))
+                    {
+                        int tmpMappedIndex = bodyIndexToParticipantMap[i];
+                        HideGuidingMethod(currentGuidingMethod, tmpMappedIndex);
+                        currentBodyPositions[tmpMappedIndex] = new Tuple<Point, bool>(new Point(0, 0), false);
+                    }
                     continue;
                 }
+
+                int mappedIndex = currentGuidingMethod == GuidingMethod.None ? i : bodyIndexToParticipantMap[i];
+                Point targetPoint = targetPoints[mappedIndex];
 
                 // Get a Joint (any down the spine) to be used as a reference point for this body
                 Joint? _trackingJoint = GetTrackingJoint(body, bodyPositionPossibleJoints);
@@ -254,7 +262,7 @@ namespace TestSuite
                 }
 
                 Point bodyPoint = new Point { X = trackingJoint.Position.X, Y = trackingJoint.Position.Z };
-                currentBodyPositions[i] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
+                currentBodyPositions[mappedIndex] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
 
                 // Calculate the Vector from current position to our target
                 Vector moveToTargetVector = Point.Subtract(targetPoint, bodyPoint);
@@ -269,7 +277,7 @@ namespace TestSuite
                 {
                     // --- Render Text Box Method ---
                     case GuidingMethod.TextBox:
-                        Tuple<Border, TextBlock> textRenderable = textMethodRenderable[i];
+                        Tuple<Border, TextBlock> textRenderable = textMethodRenderable[mappedIndex];
 
                         // Update visibility
                         textRenderable.Item1.Visibility = Visibility.Visible;
@@ -283,7 +291,7 @@ namespace TestSuite
 
                         // Format Instruction Label for User
                         string instructionLabel = "";
-                        if (isDebugMode) instructionLabel += $"Body: {i}\n";
+                        if (isDebugMode) instructionLabel += $"Body: {mappedIndex}\n";
                         
                         instructionLabel += $"{horizontalDirection}: {horizontalDistanceCM}cm\n" +
                             $"{depthDirection}: {depthDistanceCM}cm";
@@ -301,8 +309,8 @@ namespace TestSuite
 
                     // --- Render Arrow Method ---
                     case GuidingMethod.Arrows:
-                        Border arrowBorder = arrowMethodRenderable[i].Item1;
-                        Image arrowRenderable = arrowMethodRenderable[i].Item2;
+                        Border arrowBorder = arrowMethodRenderable[mappedIndex].Item1;
+                        Image arrowRenderable = arrowMethodRenderable[mappedIndex].Item2;
 
                         // Update the Visibility
                         arrowRenderable.Visibility = Visibility.Visible;
@@ -313,7 +321,7 @@ namespace TestSuite
                         // Any deviance from this is how we should rotate the arrow
                         Vector baseDirection = new Vector(0, -1);
                         double rotateAngle = Vector.AngleBetween(baseDirection, moveToTargetVector);
-                        rotateAngles[i] = rotateAngle;
+                        rotateAngles[mappedIndex] = rotateAngle;
 
                         scaleFactor = Math.Min(scaleFactor, 1);
                         // Scale First
@@ -338,7 +346,7 @@ namespace TestSuite
 
                     /// --- Render Ellipse Method ---
                     case GuidingMethod.Ellipse:
-                        Ellipse ellipseRenderable = ellipseMethodRenderable[i];
+                        Ellipse ellipseRenderable = ellipseMethodRenderable[mappedIndex];
                         ellipseRenderable.Visibility = Visibility.Visible;
 
                         JointType[] leftFootJointType = { JointType.FootLeft };
@@ -381,17 +389,17 @@ namespace TestSuite
                     // --- Render Frame Method ---
                     case GuidingMethod.Framing:
                         // If this body isn't currently being tracked, initialise to its current position
-                        if (!isShowingBodyFrame[i])
+                        if (!isShowingBodyFrame[mappedIndex])
                         {
-                            InitialiseFrame(body, i, trackingJoint);
+                            InitialiseFrame(body, mappedIndex, trackingJoint);
                             updateBodyFrames = true;
                         }
                         break;
 
                     // --- Render Pixelate Method
                     case GuidingMethod.Pixelation:
-                        Border imageEffectBorder = imageEffectMethodRenderable[i].Item1;
-                        Image imageEffectRenderable = imageEffectMethodRenderable[i].Item2;
+                        Border imageEffectBorder = imageEffectMethodRenderable[mappedIndex].Item1;
+                        Image imageEffectRenderable = imageEffectMethodRenderable[mappedIndex].Item2;
 
                         imageEffectBorder.Visibility = Visibility.Visible;
                         imageEffectRenderable.Visibility = Visibility.Visible;
@@ -415,8 +423,8 @@ namespace TestSuite
                         Canvas.SetTop(imageEffectBorder, guideJointColorPoint.Y - imageEffectBorder.Height / 2);
                         break;
                     case GuidingMethod.Distortion:
-                        Border imageDistortionEffectBorder = imageEffectMethodRenderable[i].Item1;
-                        Image imageDistortionEffectRenderable = imageEffectMethodRenderable[i].Item2;
+                        Border imageDistortionEffectBorder = imageEffectMethodRenderable[mappedIndex].Item1;
+                        Image imageDistortionEffectRenderable = imageEffectMethodRenderable[mappedIndex].Item2;
 
                         imageDistortionEffectBorder.Visibility = Visibility.Visible;
                         imageDistortionEffectRenderable.Visibility = Visibility.Visible;

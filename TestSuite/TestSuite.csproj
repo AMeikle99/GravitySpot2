@@ -152,6 +152,7 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="TestParticipant.cs" />
     <Compile Include="ImageEffectRenderer.cs" />
     <Compile Include="VisibilityConverters.cs" />
     <Compile Include="MaskedImageImageRenderer.cs" />

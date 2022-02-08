@@ -126,6 +126,8 @@ namespace TestSuite
         private List<UserIndex> conditionStoppedControllerIndices;
         private ExperimentState currentExperimentState = ExperimentState.WaitingToBegin;
         private List<UserIndex> linkedControllers;
+        private List<TestParticipant> testParticipants;
+        private IDictionary<int, int> bodyIndexToParticipantMap;
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -468,10 +470,14 @@ namespace TestSuite
 
             allBodies = new Body[bodyCount];
             currentTrackedBodyIDs = new int[bodyCount];
-            GenerateNewTargetPoints();
 
             UserIndex[] controllerRange = { UserIndex.One, UserIndex.Two, UserIndex.Three, UserIndex.Four};
             controllers = controllerRange.Select(i => new UserController(i, this)).ToArray();
+
+            testParticipants = new List<TestParticipant>();
+            bodyIndexToParticipantMap = new Dictionary<int, int>();
+
+            GenerateNewTargetPoints();
         }
 
         #region WindowEventHandlers
@@ -666,7 +672,7 @@ namespace TestSuite
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
         private void RenderSkeleton(List<int> bodyIndexes)
         {
-            skeletonRenderer.UpdateAllSkeletons(allBodies, bodyIndexes);
+            skeletonRenderer.UpdateAllSkeletons(allBodies, bodyIndexes, bodyIndexToParticipantMap);
         }
         #endregion
 
@@ -679,7 +685,7 @@ namespace TestSuite
         /// <param name="imageType">The type of representation to be shown on screen</param>
         private void RenderMaskedImage(MultiSourceFrame multiSourceFrame, List<int> bodyIndexesToShow, MaskedImageType imageType)
         {
-            mirrorImageRenderer.UpdateAllMaskedImages(multiSourceFrame, bodyIndexesToShow, imageType);
+            mirrorImageRenderer.UpdateAllMaskedImages(multiSourceFrame, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
         }
         #endregion
 
@@ -696,7 +702,13 @@ namespace TestSuite
                 if ((CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.RedoControllerLink) && !linkedControllers.Contains(controllerIndex))
                 {
                     linkedControllers.Add(controllerIndex);
-                    NextParticipantID++;
+
+                    TestParticipant nextParticipant = new TestParticipant(NextParticipantID++);
+                    nextParticipant.SetBodyIndex(bodyIndexesToShow.First());
+
+                    bodyIndexToParticipantMap.Add(bodyIndexesToShow.First(), testParticipants.Count);
+
+                    testParticipants.Add(nextParticipant);
                     AdvanceState();
                 }
                 else if ((CurrentExperimentState == ExperimentState.ConditionInProgress && !conditionStoppedControllerIndices.Contains(controllerIndex)) || CurrentExperimentState == ExperimentState.DebugOverride)
@@ -736,7 +748,7 @@ namespace TestSuite
         /// <param name="bodies">An array of Body objects, populated from GetAndRefreshBodyData()</param>
         private void RenderGuidingMethod(Body[] bodies)
         {
-            guidingMethodRenderer.RenderGuidingMethod(bodies, targetPoints, bodyIndexesToShow);
+            guidingMethodRenderer.RenderGuidingMethod(bodies, targetPoints, bodyIndexesToShow, bodyIndexToParticipantMap);
         }
         #endregion
 
@@ -802,6 +814,10 @@ namespace TestSuite
                     if (currentParticipantLinked == userCountForExperiment)
                     {
                         UserLabelMessage = EXP_COND_WAIT_MESSAGE;
+                        for (int bodyIndex = 0; bodyIndex < bodies.Length; bodyIndex++)
+                        {
+                            if (!bodyIndexToParticipantMap.ContainsKey(bodyIndex)) bodyIndexToParticipantMap.Add(bodyIndex, userCountForExperiment);
+                        }
                         ResetForNextCondition();
                     }
                     else
@@ -841,8 +857,12 @@ namespace TestSuite
             userCountForExperiment = trackedBodies.Length;
             List<Body> allBodiesList = allBodies.ToList();
             currentTrackedBodyIDs = trackedBodies.Select(body => allBodiesList.IndexOf(body)).ToArray();
+
             linkedControllers = new List<UserIndex>(userCountForExperiment);
             conditionStoppedControllerIndices = new List<UserIndex>(userCountForExperiment);
+            bodyIndexToParticipantMap.Clear();
+            testParticipants.Clear();
+
             AdvanceState();
         }
 
@@ -879,6 +899,11 @@ namespace TestSuite
             int[] bodyRange = Enumerable.Range(0, bodyCount).ToArray();
 
             targetPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
+
+            for (int i = 0; i < testParticipants.Count; i++)
+            {
+                testParticipants[i].SetTargetPoint(targetPoints[i]);
+            }
         }
 
         /// <summary>

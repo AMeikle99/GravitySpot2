@@ -53,7 +53,8 @@ namespace TestSuite
         /// <param name="frame">The multi source frame that contains all the relevant frame types</param>
         /// <param name="bodyIndexesToShow">A list of valid body indexes to show</param>
         /// <param name="imageType">The type of body masked image to show, either Mirror or Colored Silhouette</param>
-        public void UpdateAllMaskedImages(MultiSourceFrame frame, List<int> bodyIndexesToShow, MaskedImageType imageType)
+        /// <param name="bodyIndexToParticipantMap">A mapping of body index to participant index, to keep consistency in colors</param>
+        public void UpdateAllMaskedImages(MultiSourceFrame frame, List<int> bodyIndexesToShow, MaskedImageType imageType, IDictionary<int, int> bodyIndexToParticipantMap)
         {
             ColorFrame colorFrame = null;
             BodyIndexFrame bodyIndexFrame = null;
@@ -89,7 +90,7 @@ namespace TestSuite
                 kinectSensor.CoordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthBuffer.UnderlyingBuffer, depthBufferSize, colorToDepthPoints);
                 colorFrame.CopyConvertedFrameDataToIntPtr(bitmapImage.BackBuffer, (uint)colorToDepthPoints.Length * BytesPerPixel, ColorImageFormat.Bgra);
 
-                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType);
+                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
                 UpdateBitmapImage();
             }
             // IMPORTANT - Dispose of all frames and buffers, otherwise there is a severe fps hit
@@ -121,7 +122,8 @@ namespace TestSuite
         /// <param name="bodyIndexBuffer">Object which holds the bodyIndexFrame underlying buffer (Acquired with LockImageBuffer())</param>
         /// <param name="bodyIndexesToShow">A list of all the valid body indexes to show</param>
         /// <param name="imageType">The type of body masked image to show, either Mirror or Colored Silhouette</param>
-        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow, MaskedImageType imageType)
+        /// <param name="bodyIndexToParticipantMap">A mapping of body index to participant index, to keep consistency in colors</param>
+        unsafe private void UpdateMaskedBodies(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow, MaskedImageType imageType, IDictionary<int, int> bodyIndexToParticipantMap)
         {
             // Create a static pointer to the data buffer which can be offset to access a specific entry
             IntPtr bodyIndexByteAccess = bodyIndexBuffer.UnderlyingBuffer;
@@ -166,10 +168,12 @@ namespace TestSuite
 
                                 if (bodyIndexesToShow.Contains(bodyIndex))
                                 {
-                                    if (imageType == MaskedImageType.Silhouette)
+                                    if (imageType == MaskedImageType.Silhouette && bodyIndexToParticipantMap.ContainsKey(bodyIndex))
                                     {
                                         byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
-                                        Color bodyColor = SkeletonRenderer.BodyColor[bodyIndex];
+
+                                        int mappedIndex = bodyIndexToParticipantMap[bodyIndex];
+                                        Color bodyColor = SkeletonRenderer.BodyColor[mappedIndex];
 
                                         // Byte 0: B, 1: G, 2: R, 3: A (alpha)
                                         *pixelPointer++ = bodyColor.B;

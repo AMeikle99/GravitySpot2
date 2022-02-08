@@ -83,20 +83,23 @@ namespace TestSuite
         /// </summary>
         /// <param name="bodies">An array of Body objects, ideally from GetAndRefreshBodyData()</param>
         /// <param name="bodyIndexesToShow">A list of valid body indexes to display</param>
-        public void UpdateAllSkeletons(Body[] bodies, List<int> bodyIndexesToShow)
+        /// <param name="bodyIndexToParticipantMap">A mapping of body index to participant index, to keep consistency in colors</param>
+        public void UpdateAllSkeletons(Body[] bodies, List<int> bodyIndexesToShow, IDictionary<int, int> bodyIndexToParticipantMap)
         {
             for (int i = 0; i < bodies.Length; i++)
             {
                 Body body = bodies[i];
 
+                int mappedIndex = bodyIndexToParticipantMap[i];
+
                 // Check if the current body is being tracked, update or clear as appropriate
                 if (body.IsTracked && bodyIndexesToShow.Contains(i))
                 {
-                    UpdateSkeleton(body, i);
+                    UpdateSkeleton(body, mappedIndex);
                 }
                 else
                 {
-                    ClearSkeleton(i);
+                    ClearSkeleton(mappedIndex);
                 }
             }
         }

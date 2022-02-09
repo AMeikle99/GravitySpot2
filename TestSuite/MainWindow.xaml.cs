@@ -560,6 +560,7 @@ namespace TestSuite
                         CurrentExperimentState = ExperimentState.DebugOverride;
                         bodyIndexesToShow = Enumerable.Range(0, bodies.Length).ToList();
                         UserMessage.Visibility = Visibility.Collapsed;
+                        foreach (int i in bodyIndexesToShow) bodyIndexToParticipantMap.Add(i, i);
                     }
                     else
                     {
@@ -567,6 +568,7 @@ namespace TestSuite
                         CurrentExperimentState = ExperimentState.WaitingToBegin;
                         CurrentUserRepresentation = RepresentationType.None;
                         CurrentGuidingMethod = GuidingMethod.None;
+                        bodyIndexToParticipantMap.Clear();
                     }
                     break;
 
@@ -632,6 +634,157 @@ namespace TestSuite
                 bodyFrame.GetAndRefreshBodyData(tempBodies);
 
                 allBodies = tempBodies;
+            }
+
+            
+
+            // Try and recover User Index if body has been lost
+            if (CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.WaitingToStartCondition || CurrentExperimentState == ExperimentState.ConditionInProgress)
+            {
+                // Update Last Known Position
+                for (int i = 0; i < allBodies.Length; i++)
+                {
+                    if (!bodyIndexToParticipantMap.ContainsKey(i)) continue;
+
+                    int bodyUserIndex = bodyIndexToParticipantMap[i];
+                    Joint? _trackingJoint = guidingMethodRenderer.GetTrackingJoint(allBodies[i], new JointType[] { JointType.SpineBase, JointType.SpineMid, JointType.SpineShoulder });
+
+                    if (bodyUserIndex == userCountForExperiment || !_trackingJoint.HasValue) continue;
+
+                    Joint trackingJoint = _trackingJoint.Value;
+                    CameraSpacePoint bodyCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(trackingJoint.Position);
+                    Point bodyPoint = new Point(bodyCameraPoint.X, bodyCameraPoint.Z);
+
+                    testParticipants[bodyUserIndex].UpdateLastKnownPoint(bodyPoint);
+                }
+
+                List<int> currTrackedBodyIDs = trackedBodies.Select(body => allBodies.ToList().IndexOf(body)).ToList();
+                List<int> prevTrackedBodyIDs = testParticipants.Select(participant => participant.GetBodyIndex()).ToList();
+
+                List<int> differingBodyIds = currTrackedBodyIDs.Except(prevTrackedBodyIDs).ToList();
+
+                // No bodies not being tracked, only one mismatched ID
+                if (currTrackedBodyIDs.Count == prevTrackedBodyIDs.Count && differingBodyIds.Count == 1)
+                {
+                    int differingId = differingBodyIds.First();
+                    foreach (TestParticipant participant in testParticipants)
+                    {
+                        if (!currTrackedBodyIDs.Contains(participant.GetBodyIndex()))
+                        {
+                            int prevId = participant.GetBodyIndex();
+
+                            if (bodyIndexesToShow.Contains(prevId))
+                            {
+                                bodyIndexesToShow.Remove(prevId);
+                                bodyIndexesToShow.Add(differingId);
+                            }
+
+                            int prevDifferBodyMapping = bodyIndexToParticipantMap[differingId];
+                            int prevParticipantBodyMapping = bodyIndexToParticipantMap[prevId];
+                            bodyIndexToParticipantMap[differingId] = prevParticipantBodyMapping;
+                            bodyIndexToParticipantMap[prevId] = prevDifferBodyMapping;
+                            participant.SetBodyIndex(differingId);
+                        }
+                    }
+                } 
+                else if (differingBodyIds.Count > 0)
+                {
+                    while (differingBodyIds.Count > 0)
+                    {
+                        List<int> differingUserIDs = prevTrackedBodyIDs.Except(currTrackedBodyIDs).ToList();
+                        differingUserIDs = differingUserIDs.Select(bodyId => bodyIndexToParticipantMap[bodyId]).Where(userId => userId < userCountForExperiment).ToList();
+
+                        IDictionary<int, Tuple<int, double>> bodyIdToUserIdDistanceMap = new Dictionary<int, Tuple<int, double>>();
+
+                        foreach (int bodyId in differingBodyIds)
+                        {
+                            int minUserId = -1;
+                            double minDistance = double.MaxValue;
+
+                            Joint? _trackingJoint = guidingMethodRenderer.GetTrackingJoint(allBodies[bodyId], new JointType[] { JointType.SpineBase, JointType.SpineMid, JointType.SpineShoulder });
+                            if (!_trackingJoint.HasValue) continue;
+
+                            Joint trackingJoint = _trackingJoint.Value;
+                            CameraSpacePoint trackingCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(trackingJoint.Position);
+                            Point bodyPoint = new Point(trackingCameraPoint.X, trackingCameraPoint.Z);
+
+                            foreach (int userId in differingUserIDs)
+                            {
+                                Point lastKnownPoint = testParticipants[userId].GetLastKnownPoint();
+                                double distanceToLastKnownPoint = GuidingMethodRenderer.DistanceBetweenPoints(bodyPoint, lastKnownPoint);
+                                if (distanceToLastKnownPoint < minDistance)
+                                {
+                                    minDistance = distanceToLastKnownPoint;
+                                    minUserId = userId;
+                                }
+                            }
+
+                            if (minUserId == -1) continue;
+
+                            bodyIdToUserIdDistanceMap.Add(bodyId, new Tuple<int, double>(minUserId, minDistance));
+                        }
+
+                        // All User ID's for the bodies are unique, we can assign all
+                        // Otherwise, take body with closest user, then repeat
+                        List<int> closestUserIds = bodyIdToUserIdDistanceMap.Values.Select(userDistanceTuple => userDistanceTuple.Item1).ToList();
+
+                        if (closestUserIds.Count != differingBodyIds.Count) break;
+
+                        if (closestUserIds.Distinct().Count() == closestUserIds.Count())
+                        {
+                            int a = 0;
+                            foreach (var kvPair in bodyIdToUserIdDistanceMap)
+                            {
+                                int bodyId = kvPair.Key;
+                                int userId = kvPair.Value.Item1;
+
+                                TestParticipant participant = testParticipants[userId];
+
+                                int prevId = participant.GetBodyIndex();
+
+                                if (bodyIndexesToShow.Contains(prevId))
+                                {
+                                    bodyIndexesToShow.Remove(prevId);
+                                    bodyIndexesToShow.Add(bodyId);
+                                }
+
+                                int prevDifferBodyMapping = bodyIndexToParticipantMap[bodyId];
+                                int prevParticipantBodyMapping = bodyIndexToParticipantMap[prevId];
+                                bodyIndexToParticipantMap[bodyId] = prevParticipantBodyMapping;
+                                bodyIndexToParticipantMap[prevId] = prevDifferBodyMapping;
+                                participant.SetBodyIndex(bodyId);
+
+                                differingBodyIds.Remove(bodyId);
+                            }
+                        }
+                        else
+                        {
+                            var kvPair = bodyIdToUserIdDistanceMap.OrderBy(t => t.Value.Item2).First();
+                            int bodyId = kvPair.Key;
+                            int userId = kvPair.Value.Item1;
+
+                            TestParticipant participant = testParticipants[userId];
+
+                            int prevId = participant.GetBodyIndex();
+
+                            if (bodyIndexesToShow.Contains(prevId))
+                            {
+                                bodyIndexesToShow.Remove(prevId);
+                                bodyIndexesToShow.Add(bodyId);
+                            }
+
+                            int prevDifferBodyMapping = bodyIndexToParticipantMap[bodyId];
+                            int prevParticipantBodyMapping = bodyIndexToParticipantMap[prevId];
+                            bodyIndexToParticipantMap[bodyId] = prevParticipantBodyMapping;
+                            bodyIndexToParticipantMap[prevId] = prevDifferBodyMapping;
+                            participant.SetBodyIndex(bodyId);
+
+                            differingBodyIds.Remove(bodyId);
+                        }
+
+                    }
+                }
+                
             }
 
             if (trackedBodies.Any())
@@ -703,7 +856,7 @@ namespace TestSuite
                 {
                     linkedControllers.Add(controllerIndex);
 
-                    TestParticipant nextParticipant = new TestParticipant(NextParticipantID++);
+                    TestParticipant nextParticipant = new TestParticipant(NextParticipantID++, controllerIndex);
                     nextParticipant.SetBodyIndex(bodyIndexesToShow.First());
 
                     bodyIndexToParticipantMap.Add(bodyIndexesToShow.First(), testParticipants.Count);
@@ -818,6 +971,7 @@ namespace TestSuite
                         {
                             if (!bodyIndexToParticipantMap.ContainsKey(bodyIndex)) bodyIndexToParticipantMap.Add(bodyIndex, userCountForExperiment);
                         }
+                        bodyIndexesToShow = testParticipants.Select(part => part.GetBodyIndex()).ToList();
                         ResetForNextCondition();
                     }
                     else

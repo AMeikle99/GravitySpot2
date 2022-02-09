@@ -1033,7 +1033,7 @@ namespace TestSuite
         /// </summary>
         /// <param name="body">The body object to extract the tracing joint from</param>
         /// <returns>An Optional Joint: The Joint (down the spine) to track the Skeleton Position</returns>
-        private Joint? GetTrackingJoint(Body body, JointType[] possibleJointTypes)
+        public Joint? GetTrackingJoint(Body body, JointType[] possibleJointTypes)
         {
             foreach (JointType jointType in possibleJointTypes)
             {

@@ -476,8 +476,6 @@ namespace TestSuite
 
             testParticipants = new List<TestParticipant>();
             bodyIndexToParticipantMap = new Dictionary<int, int>();
-
-            GenerateNewTargetPoints();
         }
 
         #region WindowEventHandlers
@@ -561,6 +559,7 @@ namespace TestSuite
                         bodyIndexesToShow = Enumerable.Range(0, bodies.Length).ToList();
                         UserMessage.Visibility = Visibility.Collapsed;
                         foreach (int i in bodyIndexesToShow) bodyIndexToParticipantMap.Add(i, i);
+                        GenerateNewTargetPoints();
                     }
                     else
                     {
@@ -625,6 +624,7 @@ namespace TestSuite
             {
                 if (bodyFrame == null) return;
 
+                // Calculate Tilt Angle of the Camera (Approx- for Debugging)
                 Vector4 floorPlane = bodyFrame.FloorClipPlane;
                 guidingMethodRenderer.cameraFloorPlane = floorPlane;
                 guidingMethodRenderer.CameraTiltAngle = Math.Atan2(floorPlane.Z, floorPlane.Y);
@@ -644,6 +644,7 @@ namespace TestSuite
                 // Update Last Known Position
                 for (int i = 0; i < allBodies.Length; i++)
                 {
+                    // Ignore if body doesn't belong to a participant
                     if (!bodyIndexToParticipantMap.ContainsKey(i)) continue;
 
                     int bodyUserIndex = bodyIndexToParticipantMap[i];
@@ -658,35 +659,43 @@ namespace TestSuite
                     testParticipants[bodyUserIndex].UpdateLastKnownPoint(bodyPoint);
                 }
 
+                // Indexes of bodies the Camera Currently Tracks
                 List<int> currTrackedBodyIDs = trackedBodies.Select(body => allBodies.ToList().IndexOf(body)).ToList();
+                // Indexes of bodies for participants, as last updated (may differ from above)
                 List<int> prevTrackedBodyIDs = testParticipants.Select(participant => participant.GetBodyIndex()).ToList();
 
+                // ID's for bodies being tracked, that don't match a test participant
                 List<int> differingBodyIds = currTrackedBodyIDs.Except(prevTrackedBodyIDs).ToList();
 
-                // No bodies not being tracked, only one mismatched ID
+                // Body count matches Participant COunt, only one mismatched ID
                 if (currTrackedBodyIDs.Count == prevTrackedBodyIDs.Count && differingBodyIds.Count == 1)
                 {
                     int differingId = differingBodyIds.First();
+                    // For every participant, find the one who's Last Known body index isn't being tracked (the mismatch)
                     foreach (TestParticipant participant in testParticipants)
                     {
                         if (!currTrackedBodyIDs.Contains(participant.GetBodyIndex()))
                         {
                             int prevId = participant.GetBodyIndex();
 
+                            // Update Body Indexes to Show
                             if (bodyIndexesToShow.Contains(prevId))
                             {
                                 bodyIndexesToShow.Remove(prevId);
                                 bodyIndexesToShow.Add(differingId);
                             }
 
+                            // Update mappings between body indexes and participants
                             int prevDifferBodyMapping = bodyIndexToParticipantMap[differingId];
                             int prevParticipantBodyMapping = bodyIndexToParticipantMap[prevId];
                             bodyIndexToParticipantMap[differingId] = prevParticipantBodyMapping;
                             bodyIndexToParticipantMap[prevId] = prevDifferBodyMapping;
                             participant.SetBodyIndex(differingId);
+                            break;
                         }
                     }
-                } 
+                }
+                // Multiple mismatches and/or body might be not tracked but should be (count mismatch)
                 else if (differingBodyIds.Count > 0)
                 {
                     while (differingBodyIds.Count > 0)
@@ -732,7 +741,6 @@ namespace TestSuite
 
                         if (closestUserIds.Distinct().Count() == closestUserIds.Count())
                         {
-                            int a = 0;
                             foreach (var kvPair in bodyIdToUserIdDistanceMap)
                             {
                                 int bodyId = kvPair.Key;
@@ -757,6 +765,7 @@ namespace TestSuite
                                 differingBodyIds.Remove(bodyId);
                             }
                         }
+                        // Two bodies match to the same User. Take the closest body/user pairing, remove from selection and repeat
                         else
                         {
                             var kvPair = bodyIdToUserIdDistanceMap.OrderBy(t => t.Value.Item2).First();
@@ -780,6 +789,8 @@ namespace TestSuite
                             participant.SetBodyIndex(bodyId);
 
                             differingBodyIds.Remove(bodyId);
+                            prevTrackedBodyIDs.Remove(prevId);
+                            prevTrackedBodyIDs.Add(bodyId);
                         }
 
                     }
@@ -813,8 +824,11 @@ namespace TestSuite
                     break;
             }
 
-            // Render the Guiding Method currently selected
-            RenderGuidingMethod(allBodies);
+            if (CurrentExperimentState == ExperimentState.ConditionInProgress || CurrentExperimentState == ExperimentState.DebugOverride)
+            {
+                // Render the Guiding Method currently selected
+                RenderGuidingMethod(allBodies);
+            }
         }
         #endregion
 
@@ -852,6 +866,7 @@ namespace TestSuite
             // Dispatch to prevent UI thread getting blocked
             Dispatcher.Invoke(() =>
             {
+                // Link a controller to a User Participant, and assign the currently tracked body
                 if ((CurrentExperimentState == ExperimentState.InitialControllerLink || CurrentExperimentState == ExperimentState.RedoControllerLink) && !linkedControllers.Contains(controllerIndex))
                 {
                     linkedControllers.Add(controllerIndex);
@@ -864,16 +879,20 @@ namespace TestSuite
                     testParticipants.Add(nextParticipant);
                     AdvanceState();
                 }
-                else if ((CurrentExperimentState == ExperimentState.ConditionInProgress && !conditionStoppedControllerIndices.Contains(controllerIndex)) || CurrentExperimentState == ExperimentState.DebugOverride)
+                // Currently in a condition, participant presses A key and their timing is stopped and distance logged (if they haven't already pressed a button)
+                else if ((CurrentExperimentState == ExperimentState.ConditionInProgress && !conditionStoppedControllerIndices.Contains(controllerIndex)))
                 {
                     conditionStoppedControllerIndices.Add(controllerIndex);
                     controllers[(int)controllerIndex].StopTiming();
-                    BodyFinalDistance = Math.Round(BodyDistance * 100, 2);
 
                     if (conditionStoppedControllerIndices.Count == userCountForExperiment)
                     {
                         AdvanceState();
                     }
+                } else if (CurrentExperimentState == ExperimentState.DebugOverride)
+                {
+                    controllers[(int)controllerIndex].StopTiming();
+                    BodyFinalDistance = Math.Round(BodyDistance * 100, 2);
                 }
             });
         }
@@ -1049,11 +1068,33 @@ namespace TestSuite
         /// </summary>
         private void GenerateNewTargetPoints()
         {
-            int bodyCount = kinectSensor.BodyFrameSource.BodyCount;
-            int[] bodyRange = Enumerable.Range(0, bodyCount).ToArray();
+            if (IsDebugState())
+            {
+                List<Point> tmpPoints = new List<Point>();
+                foreach (Body body in trackedBodies)
+                {
+                    tmpPoints.Add(Target2DPointInCameraSpace(body, tmpPoints));
+                }
 
-            targetPoints = bodyRange.Select(i => Random2DPointInCameraSpace()).ToArray();
-
+                for (int i = 0; i < allBodies.Length - trackedBodies.Length; i++)
+                {
+                    tmpPoints.Add(tmpPoints[i % trackedBodies.Length]);
+                }
+                targetPoints = tmpPoints.ToArray();
+            } else
+            {
+                // Generate a new point for each participant
+                // Pass in the currently generated points for other users, so they can be used in collision detection
+                List<Point> tmpTargetPoints = new List<Point>();
+                foreach(TestParticipant participant in testParticipants)
+                {
+                    Body nextBody = allBodies[participant.GetBodyIndex()];
+                    tmpTargetPoints.Add(Target2DPointInCameraSpace(nextBody, tmpTargetPoints));
+                }
+                targetPoints = tmpTargetPoints.ToArray();
+            }
+            
+            // Assign each participant their target point
             for (int i = 0; i < testParticipants.Count; i++)
             {
                 testParticipants[i].SetTargetPoint(targetPoints[i]);
@@ -1150,7 +1191,352 @@ namespace TestSuite
             // The 3-D Plane becomes a 2-D plane Horizontally (X) and Deep (Z)
             return new Point(X, Z);
         }
+
+        /// <summary>
+        /// Generates a Target Point for a given body. Each is a set distance from current position and avoids collision with other users
+        /// Target Point is chosen as a random point on fixed circle. Certain points are excluded where there is an intersection with Front/Back Boundaries
+        /// Or Left/Right Boundaries, Or the positioning would occlude/be occluded by another Participants Chosen Point
+        /// </summary>
+        /// <param name="body">Body info to generate a target point nearby</param>
+        /// <param name="otherTargetPoints">Other generated points for other participants</param>
+        /// <returns>Point (x,y) 1m away from <paramref name="body"/> Position</returns>
+        private Point Target2DPointInCameraSpace(Body body, List<Point> otherTargetPoints)
+        {
+            Joint? _trackingJoint = guidingMethodRenderer.GetTrackingJoint(body, new JointType[] { JointType.SpineBase, JointType.SpineMid, JointType.SpineShoulder });
+
+            if (!_trackingJoint.HasValue) return Random2DPointInCameraSpace();
+
+            Joint trackingJoint = _trackingJoint.Value;
+            CameraSpacePoint trackingCameraPoint = guidingMethodRenderer.RotateCameraPointForTilt(trackingJoint.Position);
+
+            Point tracking2DPoint = new Point(trackingCameraPoint.X, trackingCameraPoint.Z);
+
+            List<Tuple<double, double>> outOfBoundAngles = new List<Tuple<double, double>>();
+            double nextPointDistance = 1.0;
+
+            // Note on Angle Intersection (Anticlockwise from East Start):
+            // 0   DEG: Move Right, No Back/Forwards
+            // 90  DEG: Move Back, No Left/Right
+            // 180 DEG: Move Left, No Back/Forwards
+            // 270 DEG: Move Forwards, No Left/Right
+            // Others are a combination:
+            // E.g. 45 DEG: Move Back & Right
+
+            // Check for front boundary
+            // y = MinSkeletonDepth
+            // Solve for X -> x = sqrt(r^2 - y^2) -> x < 0, no intersect
+            double x_intersect = Math.Pow(nextPointDistance, 2) - Math.Pow(tracking2DPoint.Y - MinSkeletonDepth, 2);
+            if (x_intersect > 0)
+            {
+                double distanceToFrontBoundary = Math.Abs(tracking2DPoint.Y - MinSkeletonDepth);
+
+                // Angles for each intersection (270 as boundary should be infront, may want to limit frontal movement)
+                double angle1 = (3 * Math.PI / 2) - Math.Acos(distanceToFrontBoundary / nextPointDistance);
+                double angle2 = (3 * Math.PI / 2) + Math.Acos(distanceToFrontBoundary / nextPointDistance);
+
+                // Checks for the Participant being infront/behind the boundary. To adjust exclusion zones appropriately
+                if (tracking2DPoint.Y >= MinSkeletonDepth)
+                {
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle1, angle2));
+                }
+                else
+                {
+                    angle1 -= Math.PI;
+                    angle2 -= Math.PI;
+                    outOfBoundAngles.Add(new Tuple<double, double>(0, angle1));
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle2, 2 * Math.PI));
+                }
+
+            }
+
+            // Check for back boundary
+            // y = MaxSkeletonDepth
+            // Solve for X -> x = sqrt(r^2 - y^2) -> x < 0, no intersect
+            x_intersect = Math.Pow(nextPointDistance, 2) - Math.Pow(MaxSkeletonDepth - tracking2DPoint.Y, 2);
+            if (x_intersect > 0)
+            {
+                double distanceToBackBoundary = Math.Abs(MaxSkeletonDepth - tracking2DPoint.Y);
+
+                // Angles for each intersection (90 as boundary should be behind, may want to limit backwards movement)
+                double angle1 = (Math.PI / 2) - Math.Acos(distanceToBackBoundary / nextPointDistance);
+                double angle2 = (Math.PI / 2) + Math.Acos(distanceToBackBoundary / nextPointDistance);
+
+                // Checks for the Participant being infront/behind the boundary. To adjust exclusion zones appropriately
+                if (tracking2DPoint.Y < MaxSkeletonDepth)
+                {
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle1, angle2));
+                } 
+                else
+                {
+                    angle1 += Math.PI;
+                    angle2 += Math.PI;
+                    outOfBoundAngles.Add(new Tuple<double, double>(0, angle1));
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle2, 2 * Math.PI));
+                }
+            }
+
+            // Check for left boundary
+            double xi = tracking2DPoint.X, yi = tracking2DPoint.Y;
+            double m = Math.Tan((Math.PI / 2) + (SensorFOV / 2));
+
+            // Get the intewrsecting points (if any) between the boundary and the target point circle
+            List<Point> circleIntersections = LineCircleIntersections(m, xi, yi);
+
+            // Multiple points, exclude that area of potential points as it is outwith the stable zone
+            if (circleIntersections.Count == 2)
+            {
+                Point intersect1 = circleIntersections[0];
+                Point intersect2 = circleIntersections[1];
+
+                double angle1 = ConvertPointToAngle(intersect1);
+                double angle2 = ConvertPointToAngle(intersect2);
+                
+                outOfBoundAngles.Add(new Tuple<double, double>(Math.Min(angle1, angle2), Math.Max(angle1, angle2)));
+            }
+
+            // Check for Right Boundary
+            // See above for explanation
+            m = Math.Tan((Math.PI / 2) - (SensorFOV / 2));
+            circleIntersections = LineCircleIntersections(m, xi, yi);
+
+            // Multiple points, exclude that area of potential points as it is outwith the stable zone
+            if (circleIntersections.Count == 2)
+            {
+                Point intersect1 = circleIntersections[0];
+                Point intersect2 = circleIntersections[1];
+
+                double angle1 = ConvertPointToAngle(intersect1);
+                double angle2 = ConvertPointToAngle(intersect2);
+                if (angle1 > angle2)
+                {
+                    outOfBoundAngles.Add(new Tuple<double, double>(0, angle2));
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle1, 2 * Math.PI));
+                } else
+                {
+                    outOfBoundAngles.Add(new Tuple<double, double>(angle1, angle2));
+                }
+            }
+
+            // Find Blocking Intersections between Other Points generated for other participants
+            // We need to prevent target points being generated that would occlude/be occluded by the points for other users
+            foreach (Point otherPoint in otherTargetPoints)
+            {
+                // Line From target to origin
+                m = otherPoint.Y / otherPoint.X;
+
+                // Perpendicular Line
+                double m_perp = -1 / m;
+
+                // Offset by 0.15 each side
+                double grad_angle = Math.Abs(Math.Atan(m));
+                double interior_angle = (Math.PI / 2) - grad_angle;
+                double clearance = 0.20; // 20cm either side
+
+                double x_offset = Math.Cos(interior_angle) * clearance;
+                double y_offset = Math.Sin(interior_angle) * clearance;
+                double x1 = otherPoint.X + x_offset, y1 = otherPoint.Y + y_offset;
+                double x2 = otherPoint.X - x_offset, y2 = otherPoint.Y - y_offset;
+
+                // Generate Lines for each offset point (new gradient for origin)
+                double m1 = y1 / x1;
+                double m2 = y2 / x2;
+
+                // Intersect with Potential Circle
+                // Both Lines intersect, off limits between lowest angles and highest angles
+                List<Point> intersects1 = LineCircleIntersections(m1, xi, y1);
+                List<Point> intersects2 = LineCircleIntersections(m2, xi, yi);
+
+                List<double> intersect_angles_1 = intersects1.Select(intersect => ConvertPointToAngle(intersect)).ToList();
+                List<double> intersect_angles_2 = intersects2.Select(intersect => ConvertPointToAngle(intersect)).ToList();
+
+                // No intersection for either exclusion zone boundary, ignore this point
+                if (intersect_angles_1.Count != 2 && intersect_angles_2.Count != 2) continue;
+
+                // Intersects twice. want to exclude the zone between the lines
+                // Leaving only the area left and right of the associated lines
+                if (intersect_angles_1.Count == 2 && intersect_angles_2.Count == 2)
+                {
+                    Tuple<double, double> angle_pair_1 = new Tuple<double, double>(intersect_angles_1.Min(), intersect_angles_2.Min());
+                    Tuple<double, double> angle_pair_2 = new Tuple<double, double>(intersect_angles_1.Max(), intersect_angles_2.Max());
+
+                    outOfBoundAngles.Add(angle_pair_1);
+                    outOfBoundAngles.Add(angle_pair_2);
+                }
+                // Otherwise we only intersect once so we need to exclude the correct portion of our target space
+                // Depends on the gradient of the angle and whether the points cross the 360/0 Deg Origin
+                else
+                {
+                    List<double> intersect_angles = intersect_angles_1.Count == 2 ? intersect_angles_1 : intersect_angles_2;
+                    int which_line = intersect_angles_1.Count == 2 ? 1 : 2;
+                    double concerned_m = which_line == 1 ? m1 : m2;
+                    // One line intersects, and target is left of other point
+                    // Between lowest and highest (both y's above 0 as normal, one above and one below - stradles 360 deg then 0 -> lowest and highest -> 2 PI)
+                    if (xi < otherPoint.X)
+                    {
+                        if (concerned_m < 0)
+                        {
+                            if (intersect_angles[0] < intersect_angles[1])
+                            {
+                                outOfBoundAngles.Add(new Tuple<double, double>(0, intersect_angles[0]));
+                                outOfBoundAngles.Add(new Tuple<double, double>(intersect_angles[1], 2 * Math.PI));
+                            }
+                            else
+                            {
+                                outOfBoundAngles.Add(new Tuple<double, double>(intersect_angles[1], intersect_angles[0]));
+                            }
+                        }
+                        else
+                        {
+                            if (intersect_angles[1] < intersect_angles[0])
+                            {
+                                outOfBoundAngles.Add(new Tuple<double, double>(0, intersect_angles[1]));
+                                outOfBoundAngles.Add(new Tuple<double, double>(intersect_angles[0], 2 * Math.PI));
+                            }
+                            else
+                            {
+                                outOfBoundAngles.Add(new Tuple<double, double>(intersect_angles[0], intersect_angles[1]));
+                            }
+                        }
+                    }
+                    // One line intersects, and target is right of other point
+                    // Between lowest and highest
+                    else
+                    {
+                        outOfBoundAngles.Add(new Tuple<double, double>(intersect_angles.Min(), intersect_angles.Max()));
+                    }
+                }
+            }
+
+            outOfBoundAngles = outOfBoundAngles.OrderBy(angles => angles.Item1).ToList();
+
+            List<Tuple<double, double>> outOfBoundTmp = outOfBoundAngles.Select(i => i).ToList();
+            outOfBoundAngles.Clear();
+            outOfBoundAngles.Add(outOfBoundTmp[0]);
+            outOfBoundTmp.RemoveAt(0);
+
+            // Some exclusion zones may overlap in terms of their angles
+            // Combine angle regions which overlap into a larger contiguous region
+            foreach (Tuple<double, double> currTmp in outOfBoundTmp)
+            {
+                Tuple<double, double> currAngle = outOfBoundAngles.Last();
+
+                if (currAngle.Item2 >= currTmp.Item1)
+                {
+                    Tuple<double, double> newAngleRange = new Tuple<double, double>(Math.Min(currAngle.Item1, currTmp.Item1), Math.Max(currAngle.Item2, currTmp.Item2));
+                    outOfBoundAngles.RemoveAt(outOfBoundAngles.Count - 1);
+                    outOfBoundAngles.Add(newAngleRange);
+                } 
+                else
+                {
+                    outOfBoundAngles.Add(currTmp);
+                }
+            }
+
+            List<double> candidateAngles = new List<double>();
+            double currentLowerAngle = 0;
+
+            // For each exlusion zone, calculate a random angle which falls inbetween
+            // I.e. the area bbetween is the permitted angle ranges
+            foreach (Tuple<double, double> outOfBoundAngle in outOfBoundAngles)
+            {
+                double upperAngle = outOfBoundAngle.Item1;
+
+                if (upperAngle == currentLowerAngle)
+                {
+                    currentLowerAngle = outOfBoundAngle.Item2;
+                    continue;
+                }
+
+                double angleRange = upperAngle - currentLowerAngle;
+                double randomMovementRingAngle = (rand.NextDouble() * angleRange) + currentLowerAngle;
+                candidateAngles.Add(randomMovementRingAngle);
+
+                currentLowerAngle = outOfBoundAngle.Item2;
+            }
+
+            if (currentLowerAngle < 2 * Math.PI)
+            {
+                double angleRange = (2 * Math.PI) - currentLowerAngle;
+                double randomMovementRingAngle = (rand.NextDouble() * angleRange) + currentLowerAngle;
+                candidateAngles.Add(randomMovementRingAngle);
+            }
+
+            // Chose a random angle from one of the valid zones, if none exist pick a random place anyways (should not happen, but what can you do)
+            double randomAngle = candidateAngles.Count == 0 ? rand.NextDouble() * 2 * Math.PI : candidateAngles[rand.Next(candidateAngles.Count)];
+
+            double newX = (Math.Cos(randomAngle) * nextPointDistance) + tracking2DPoint.X;
+            double newY = (Math.Sin(randomAngle) * nextPointDistance) + tracking2DPoint.Y;
+
+            return new Point(newX, newY);
+        }
         #endregion
 
+        /// <summary>
+        /// Calculates the points of intersection between a line with gradient <paramref name="m"/> passing through the origin.
+        /// </summary>
+        /// <param name="m">Gradient of the line passing through the origin</param>
+        /// <param name="xi">X offset of Circle</param>
+        /// <param name="yi">Y offset of Circle</param>
+        /// <returns>List of Intersection Points of Line and Circle (empty if none exist)</returns>
+        private List<Point> LineCircleIntersections(double m, double xi, double yi)
+        {
+            double A, B, C, D, discriminant;
+            List<Point> intersectionPoints = new List<Point>();
+
+            // y = m(x+xi) - yi ==> y = mx + mxi - yi ==> y = mx + d (d = mxi - yi)
+            // User Circle = x^2 + y^2 = nextPointDistance^2
+            //                                                                      A          B         C
+            // Substitute into circle ==> x^2 +m^2x^2 + 2mdx + d^2 - 1 = 0 ==> (m^2 + 1)x^2 + 2mdx + (d^2 - 1)
+            // m = tan (90 + sensorFOV/2); xi = Participant X; yi = Participant Z (depth)
+
+            // Solve using quadratic formula
+            D = m * xi - yi;
+            A = Math.Pow(m, 2) + 1;
+            B = 2 * m * D;
+            C = Math.Pow(D, 2) - 1;
+            discriminant = Math.Pow(B, 2) - 4 * A * C;
+            if (discriminant > 0)
+            {
+                double x_left = (-B - Math.Sqrt(discriminant)) / (2 * A);
+                double x_right = (-B + Math.Sqrt(discriminant)) / (2 * A);
+                double y_left = m * (x_left + xi) - yi;
+                double y_right = m * (x_right + xi) - yi;
+
+                intersectionPoints.Add(new Point(x_left, y_left));
+                intersectionPoints.Add(new Point(x_right, y_right));
+
+                intersectionPoints =  intersectionPoints.OrderBy(point => point.X).ToList();
+            }
+
+            return intersectionPoints;
+        }
+
+        /// <summary>
+        /// Convert a Point to the angle (gradient/slope) to reach the point
+        /// </summary>
+        /// <param name="point">Point we wish to convert into the gradient angle</param>
+        /// <returns>Angle of Slope to reach the <paramref name="point"/> from Origin (adjusted to correct Quadrant)</returns>
+        private double ConvertPointToAngle(Point point)
+        {
+            double angle = Math.Atan(Math.Abs(point.Y) / Math.Abs(point.X));
+            // Following Trigonometry adjust the angle from Quadrant 1 to the correct quadrant (if necessary)
+            if (point.X < 0)
+            {
+                if (point.Y > 0)
+                {
+                    angle = Math.PI - angle;
+                }
+                else if (point.Y < 0)
+                {
+                    angle = Math.PI + angle;
+                }
+            }
+            else if (point.X > 0 && point.Y < 0)
+            {
+                angle = 2 * Math.PI - angle;
+            }
+
+            return angle;
+        }
     }
 }

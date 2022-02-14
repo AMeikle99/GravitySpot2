@@ -261,7 +261,7 @@ namespace TestSuite
                     continue;
                 }
 
-                Point bodyPoint = new Point { X = trackingJoint.Position.X, Y = trackingJoint.Position.Z };
+                Point bodyPoint = new Point { X = trackingJointCameraPoint.X, Y = trackingJointCameraPoint.Z };
                 currentBodyPositions[mappedIndex] = new Tuple<Point, bool>(bodyPoint, body.IsTracked);
 
                 // Calculate the Vector from current position to our target

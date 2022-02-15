@@ -110,6 +110,15 @@ namespace TestSuite
         }
 
         /// <summary>
+        /// Returns the Controller Index
+        /// </summary>
+        /// <returns>Controller Index forthis controller</returns>
+        public UserIndex ControllerIndex()
+        {
+            return userIndex;
+        }
+
+        /// <summary>
         /// Checks if a specific set of buttons has been pressed
         /// </summary>
         /// <param name="gamepadButtonState">The state of the Gamepad Buttons (i.e the actual buttons pressed)</param>

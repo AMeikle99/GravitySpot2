@@ -152,6 +152,9 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="ExperimentConditionLogger.cs" />
+    <Compile Include="ExperimentLogger.cs" />
+    <Compile Include="ParticipantLogger.cs" />
     <Compile Include="TestParticipant.cs" />
     <Compile Include="ImageEffectRenderer.cs" />
     <Compile Include="VisibilityConverters.cs" />
@@ -219,5 +222,10 @@
     </Content>
   </ItemGroup>
   <ItemGroup />
+  <Target Name="MakeMyDir" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)Logs" />
+    <MakeDir Directories="$(OutDir)Logs/ParticipantLocations" />
+    <MakeDir Directories="$(OutDir)Logs/ExperimentConditionResults" />
+  </Target>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

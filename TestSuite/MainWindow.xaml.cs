@@ -60,7 +60,7 @@ namespace TestSuite
 
         #region ConditionMappings
         // Mapping from Condition ID to Representation/Guiding Method Pair
-        private IDictionary<int, Tuple<RepresentationType, GuidingMethod>> idToConditionMap = new Dictionary<int, Tuple<RepresentationType, GuidingMethod>>()
+        internal static readonly IDictionary<int, Tuple<RepresentationType, GuidingMethod>> idToConditionMap = new Dictionary<int, Tuple<RepresentationType, GuidingMethod>>()
         {
             {0, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Framing) },
             {1, new Tuple<RepresentationType, GuidingMethod>(RepresentationType.Skeleton, GuidingMethod.Pixelation) },
@@ -80,7 +80,7 @@ namespace TestSuite
         };
 
         // Mapping an experiment to the ordering of conditions to show
-        private IDictionary<int, int[]> experimentIDToConditionsMap = new Dictionary<int, int[]>()
+        internal static readonly IDictionary<int, int[]> experimentIDToConditionsMap = new Dictionary<int, int[]>()
         {
             {0, new int[]  { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14 } },
             {1, new int[]  { 12, 14, 10, 13, 8,  11, 6,  9,  4,  7,  2,  5,  0,  3,  1  } },
@@ -128,6 +128,9 @@ namespace TestSuite
         private List<UserIndex> linkedControllers;
         private List<TestParticipant> testParticipants;
         private IDictionary<int, int> bodyIndexToParticipantMap;
+
+        // Logs the Experimental Condition Results
+        private ExperimentConditionLogger conditionLogger = new ExperimentConditionLogger();
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -591,7 +594,10 @@ namespace TestSuite
                 case Key.E:
                     string newExperimentIDStr = (string)PromptDialog.Dialog.Prompt("Enter new Experiment ID [1...]", "New Experiment ID");
                     int newExperimentID;
-                    if (int.TryParse(newExperimentIDStr, out newExperimentID)) CurrentExperimentID = newExperimentID;
+                    if (int.TryParse(newExperimentIDStr, out newExperimentID))
+                    {
+                        CurrentExperimentID = newExperimentID;
+                    }
                     break;
                 // Set Next Participant ID
                 case Key.P:
@@ -871,7 +877,7 @@ namespace TestSuite
                 {
                     linkedControllers.Add(controllerIndex);
 
-                    TestParticipant nextParticipant = new TestParticipant(NextParticipantID++, controllerIndex);
+                    TestParticipant nextParticipant = new TestParticipant(NextParticipantID++, CurrentExperimentID, controllerIndex);
                     nextParticipant.SetBodyIndex(bodyIndexesToShow.First());
 
                     bodyIndexToParticipantMap.Add(bodyIndexesToShow.First(), testParticipants.Count);
@@ -882,8 +888,20 @@ namespace TestSuite
                 // Currently in a condition, participant presses A key and their timing is stopped and distance logged (if they haven't already pressed a button)
                 else if ((CurrentExperimentState == ExperimentState.ConditionInProgress && !conditionStoppedControllerIndices.Contains(controllerIndex)))
                 {
+                    TestParticipant participantForController = testParticipants.Find(participant => participant.GetControllerIndex() == controllerIndex);
+                    UserController controller = controllers.ToList().Find(cont => cont.ControllerIndex() == controllerIndex);
+
                     conditionStoppedControllerIndices.Add(controllerIndex);
-                    controllers[(int)controllerIndex].StopTiming();
+                    controller.StopTiming();
+
+                    participantForController.SetConditionIsActive(false);
+
+                    Point finalPoint = participantForController.GetLastKnownPoint();
+
+                    long timeElapsed = controller.TimeElapsed();
+                    double distance_cm = GuidingMethodRenderer.DistanceBetweenPoints(participantForController.GetTargetPoint(), finalPoint) * 100;
+
+                    conditionLogger.LogConditionResult(participantForController, timeElapsed, distance_cm, finalPoint);
 
                     if (conditionStoppedControllerIndices.Count == userCountForExperiment)
                     {
@@ -1036,6 +1054,8 @@ namespace TestSuite
             bodyIndexToParticipantMap.Clear();
             testParticipants.Clear();
 
+            conditionLogger.UpdateExperimentID(CurrentExperimentID);
+
             AdvanceState();
         }
 
@@ -1049,6 +1069,12 @@ namespace TestSuite
             currentParticipantLinked = 0;
             UserLabelMessage = EXP_END_MESSAGE;
             CurrentExperimentState = ExperimentState.ExperimentComplete;
+            conditionLogger.ExperimentRunFinished();
+
+            foreach (TestParticipant participant in testParticipants)
+            {
+                participant.FinishLogging();
+            }
         }
 
         /// <summary>
@@ -1056,11 +1082,19 @@ namespace TestSuite
         /// </summary>
         private void StartNextCondition()
         {
-            SetExperimentConditions(CurrentExperimentID, CurrentConditionOffset++);
             GenerateNewTargetPoints();
-
+            conditionLogger.SetExperimentCondition(CurrentConditionOffset);
+            SetExperimentConditions(CurrentExperimentID, CurrentConditionOffset++);
+           
             CurrentExperimentState = ExperimentState.ConditionInProgress;
             StartTimers();
+
+            // Assign each participant their target point
+            for (int i = 0; i < testParticipants.Count; i++)
+            {
+                testParticipants[i].UpdateExperimentCondition(CurrentConditionOffset-1, targetPoints[i]);
+                testParticipants[i].SetConditionIsActive(true);
+            }
         }
 
         /// <summary>
@@ -1078,7 +1112,14 @@ namespace TestSuite
 
                 for (int i = 0; i < allBodies.Length - trackedBodies.Length; i++)
                 {
-                    tmpPoints.Add(tmpPoints[i % trackedBodies.Length]);
+                    if (trackedBodies.Length == 0)
+                    {
+                        tmpPoints.Add(Random2DPointInCameraSpace());
+                    }
+                    else
+                    {
+                        tmpPoints.Add(tmpPoints[i % trackedBodies.Length]);
+                    }
                 }
                 targetPoints = tmpPoints.ToArray();
             } else
@@ -1092,12 +1133,6 @@ namespace TestSuite
                     tmpTargetPoints.Add(Target2DPointInCameraSpace(nextBody, tmpTargetPoints));
                 }
                 targetPoints = tmpTargetPoints.ToArray();
-            }
-            
-            // Assign each participant their target point
-            for (int i = 0; i < testParticipants.Count; i++)
-            {
-                testParticipants[i].SetTargetPoint(targetPoints[i]);
             }
         }
 
@@ -1125,6 +1160,13 @@ namespace TestSuite
         private void ResetForNextCondition()
         {
             StopTimers();
+
+            // Assign each participant their target point
+            for (int i = 0; i < testParticipants.Count; i++)
+            {
+                testParticipants[i].SetConditionIsActive(false);
+            }
+
             CurrentUserRepresentation = RepresentationType.None;
             CurrentGuidingMethod = GuidingMethod.None;
             CurrentExperimentState = ExperimentState.WaitingToStartCondition;

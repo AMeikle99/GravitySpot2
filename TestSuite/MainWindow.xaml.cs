@@ -561,6 +561,7 @@ namespace TestSuite
                         CurrentExperimentState = ExperimentState.DebugOverride;
                         bodyIndexesToShow = Enumerable.Range(0, bodies.Length).ToList();
                         UserMessage.Visibility = Visibility.Collapsed;
+                        bodyIndexToParticipantMap.Clear();
                         foreach (int i in bodyIndexesToShow) bodyIndexToParticipantMap.Add(i, i);
                         GenerateNewTargetPoints();
                     }

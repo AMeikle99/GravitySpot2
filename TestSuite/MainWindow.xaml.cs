@@ -1451,29 +1451,32 @@ namespace TestSuite
 
             outOfBoundAngles = outOfBoundAngles.OrderBy(angles => angles.Item1).ToList();
 
-            List<Tuple<double, double>> outOfBoundTmp = outOfBoundAngles.Select(i => i).ToList();
-            outOfBoundAngles.Clear();
-            outOfBoundAngles.Add(outOfBoundTmp[0]);
-            outOfBoundTmp.RemoveAt(0);
-
-            // Some exclusion zones may overlap in terms of their angles
-            // Combine angle regions which overlap into a larger contiguous region
-            foreach (Tuple<double, double> currTmp in outOfBoundTmp)
+            if (outOfBoundAngles.Count > 0)
             {
-                Tuple<double, double> currAngle = outOfBoundAngles.Last();
+                List<Tuple<double, double>> outOfBoundTmp = outOfBoundAngles.Select(i => i).ToList();
+                outOfBoundAngles.Clear();
+                outOfBoundAngles.Add(outOfBoundTmp[0]);
+                outOfBoundTmp.RemoveAt(0);
 
-                if (currAngle.Item2 >= currTmp.Item1)
+                // Some exclusion zones may overlap in terms of their angles
+                // Combine angle regions which overlap into a larger contiguous region
+                foreach (Tuple<double, double> currTmp in outOfBoundTmp)
                 {
-                    Tuple<double, double> newAngleRange = new Tuple<double, double>(Math.Min(currAngle.Item1, currTmp.Item1), Math.Max(currAngle.Item2, currTmp.Item2));
-                    outOfBoundAngles.RemoveAt(outOfBoundAngles.Count - 1);
-                    outOfBoundAngles.Add(newAngleRange);
-                } 
-                else
-                {
-                    outOfBoundAngles.Add(currTmp);
+                    Tuple<double, double> currAngle = outOfBoundAngles.Last();
+
+                    if (currAngle.Item2 >= currTmp.Item1)
+                    {
+                        Tuple<double, double> newAngleRange = new Tuple<double, double>(Math.Min(currAngle.Item1, currTmp.Item1), Math.Max(currAngle.Item2, currTmp.Item2));
+                        outOfBoundAngles.RemoveAt(outOfBoundAngles.Count - 1);
+                        outOfBoundAngles.Add(newAngleRange);
+                    }
+                    else
+                    {
+                        outOfBoundAngles.Add(currTmp);
+                    }
                 }
             }
-
+            
             List<double> candidateAngles = new List<double>();
             double currentLowerAngle = 0;
 

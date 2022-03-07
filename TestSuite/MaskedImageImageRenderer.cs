@@ -8,6 +8,8 @@ using Microsoft.Kinect;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows;
+using OpenCLTemplate;
+using System.Runtime.InteropServices;
 
 // Inspired by Body Mask Representation Code by: https://github.com/Kinect/tutorial
 // Adapted for this use case
@@ -21,6 +23,17 @@ namespace TestSuite
     }
     internal class MaskedImageImageRenderer
     {
+       
+        private CLCalc.Program.Kernel MaskImage;
+        private CLCalc.Program.Variable imagePixels;
+        private CLCalc.Program.Variable colorDepthPoints;
+        private CLCalc.Program.Variable bodyIndexBytePtr;
+        private CLCalc.Program.Variable bodyIndexParticipantMap;
+        private CLCalc.Program.Variable v_bodyIndexesToShow;
+        private CLCalc.Program.Variable bodyIndexesCount;
+        private CLCalc.Program.Variable depthFrameSize;
+        private CLCalc.Program.Variable v_imageType;
+
         private const int BytesPerPixel = 4;
 
         private Image mirrorImageCanvas;
@@ -28,6 +41,7 @@ namespace TestSuite
 
         private WriteableBitmap bitmapImage;
 
+        public bool usingGPU = true;
         // Each of the Points in color space converted to that of depth space
         DepthSpacePoint[] colorToDepthPoints;
 
@@ -45,6 +59,9 @@ namespace TestSuite
 
             colorToDepthPoints = new DepthSpacePoint[colorFrameDesc.Width * colorFrameDesc.Height];
             bitmapImage = new WriteableBitmap(colorFrameDesc.Width, colorFrameDesc.Height, 1, 1, PixelFormats.Bgra32, null);
+            
+            
+            MaskImage = new CLCalc.Program.Kernel("MaskImage");
         }
 
         /// <summary>
@@ -90,7 +107,14 @@ namespace TestSuite
                 kinectSensor.CoordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthBuffer.UnderlyingBuffer, depthBufferSize, colorToDepthPoints);
                 colorFrame.CopyConvertedFrameDataToIntPtr(bitmapImage.BackBuffer, (uint)colorToDepthPoints.Length * BytesPerPixel, ColorImageFormat.Bgra);
 
-                UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
+                if (usingGPU)
+                {
+                    UpdateMaskedBodies_GPU(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
+                }
+                else
+                {
+                    UpdateMaskedBodies(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
+                }
                 UpdateBitmapImage();
             }
             // IMPORTANT - Dispose of all frames and buffers, otherwise there is a severe fps hit
@@ -139,59 +163,105 @@ namespace TestSuite
                 uint* bitmapPixelsPtr = (uint*)bitmapBufferBytes;
 
                 int colorPixelLength = colorToDepthPoints.Length;
-
-                int chunks = 4;
+                int chunks = 8 ;
                 int chunkSize = colorPixelLength / chunks;
+                
 
                 Parallel.For(0, chunks, new ParallelOptions(), (iter) =>
-                {
+                  {
                     // Iterate through each color pixel (which has been converted to a depth point equivalent, meaning some depth points may map to multiple color points)
-                    for (int pixelIndex = iter * chunkSize; pixelIndex < (iter +1) * chunkSize; ++pixelIndex)
-                    {
-                        float colorToDepthX = colorToDepthPoints[pixelIndex].X;
-                        float colorToDepthY = colorToDepthPoints[pixelIndex].Y;
+                    for (int pixelIndex = iter * chunkSize; pixelIndex < (iter + 1) * chunkSize; ++pixelIndex)
+                      {
+                          float colorToDepthX = colorToDepthPoints[pixelIndex].X;
+                          float colorToDepthY = colorToDepthPoints[pixelIndex].Y;
 
-                        // Check the X/Y position is valid (-inf is the invalid value representation)
-                        if (!float.IsNegativeInfinity(colorToDepthX) && !float.IsNegativeInfinity(colorToDepthY))
-                        {
-                            int depthX = (int)colorToDepthX;
-                            int depthY = (int)colorToDepthY;
+                          // Check the X/Y position is valid (-inf is the invalid value representation)
+                          if (!float.IsNegativeInfinity(colorToDepthX) && !float.IsNegativeInfinity(colorToDepthY))
+                          {
+                              int depthX = (int)colorToDepthX;
+                              int depthY = (int)colorToDepthY;
 
                             // Check that the value is in a valid range
                             if (depthX >= 0 && depthY >= 0 && depthX < pixelWidth && depthY < pixelHeight)
-                            {
+                              {
                                 // Calculate the row/col offset for the pixel to access (Y is row, X is Col)
                                 int depthPixelIndex = (depthY * pixelWidth) + depthX;
 
                                 // Skip if value is not 255 (255 is the No Body Value, otherwise it would be the body index)
                                 int bodyIndex = bodyIndexBytePtr[depthPixelIndex];
 
-                                if (bodyIndexesToShow.Contains(bodyIndex))
-                                {
-                                    if (imageType == MaskedImageType.Silhouette && bodyIndexToParticipantMap.ContainsKey(bodyIndex))
-                                    {
-                                        byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
+                                  if (bodyIndexesToShow.Contains(bodyIndex))
+                                  {
+                                      if (imageType == MaskedImageType.Silhouette && bodyIndexToParticipantMap.ContainsKey(bodyIndex))
+                                      {
+                                          byte* pixelPointer = (byte*)&bitmapPixelsPtr[pixelIndex];
 
-                                        int mappedIndex = bodyIndexToParticipantMap[bodyIndex];
-                                        Color bodyColor = SkeletonRenderer.BodyColor[mappedIndex];
+                                          int mappedIndex = bodyIndexToParticipantMap[bodyIndex];
+                                          Color bodyColor = SkeletonRenderer.BodyColor[mappedIndex];
 
-                                        // Byte 0: B, 1: G, 2: R, 3: A (alpha)
-                                        *pixelPointer++ = bodyColor.B;
-                                        *pixelPointer++ = bodyColor.G;
-                                        *pixelPointer++ = bodyColor.R;
-                                        *pixelPointer++ = 255;
-                                    }
-                                    continue;
-                                }
-                            }
-                        }
+                                          // Byte 0: B, 1: G, 2: R, 3: A (alpha)
+                                          *pixelPointer++ = bodyColor.B;
+                                            *pixelPointer++ = bodyColor.G;
+                                            *pixelPointer++ = bodyColor.R;
+                                            *pixelPointer++ = 255;
+                                      
+                                      }
+                                      continue;
+                                  }
+                              }
+                          }
 
                         // If made it this far the pixel is invalid or doesn't belong to a body. Make it transparent
                         bitmapPixelsPtr[pixelIndex] = 0;
-                    }
-                });
+                      }
+                  });
             }
         }
+
+        unsafe private void UpdateMaskedBodies_GPU(int pixelWidth, int pixelHeight, KinectBuffer bodyIndexBuffer, List<int> bodyIndexesToShow, MaskedImageType imageType, IDictionary<int, int> bodyIndexToParticipantMap)
+        {
+            IntPtr bitmapBufferAccess = bitmapImage.BackBuffer;
+            IntPtr bodyIndexPtr = bodyIndexBuffer.UnderlyingBuffer;
+            
+
+            int colorImageSize = bitmapImage.PixelWidth * bitmapImage.PixelHeight;
+            int[] imagePixelsArray = new int[colorImageSize];
+            float[] colorDepthPointsArray = new float[2 * colorImageSize];
+            byte[] bodyIndexByteArray = new byte[pixelHeight * pixelWidth];
+
+            Marshal.Copy(bitmapBufferAccess, imagePixelsArray, 0, colorImageSize);
+            Marshal.Copy(bodyIndexPtr, bodyIndexByteArray, 0, (int)bodyIndexBuffer.Size);
+            
+            fixed (DepthSpacePoint* dsp = colorToDepthPoints)
+            {
+                IntPtr ptr = new IntPtr(dsp);
+                Marshal.Copy(ptr, colorDepthPointsArray, 0, 2 * colorToDepthPoints.Length);
+            }
+
+            int[] participantMapArray = Enumerable.Range(0, 6).Select(i =>
+            {
+                return bodyIndexToParticipantMap.ContainsKey(i) ? bodyIndexToParticipantMap[i] : -1;
+            }).ToArray();
+
+
+            imagePixels = new CLCalc.Program.Variable(imagePixelsArray);
+            colorDepthPoints = new CLCalc.Program.Variable(colorDepthPointsArray);
+            bodyIndexBytePtr = new CLCalc.Program.Variable(bodyIndexByteArray);
+            bodyIndexParticipantMap = new CLCalc.Program.Variable(participantMapArray);
+            v_bodyIndexesToShow = new CLCalc.Program.Variable(bodyIndexesToShow.ToArray());
+            bodyIndexesCount = new CLCalc.Program.Variable(new int[] { bodyIndexesToShow.Count });
+            depthFrameSize = new CLCalc.Program.Variable(new int[] { pixelWidth, pixelHeight });
+            v_imageType = new CLCalc.Program.Variable(new int[] { (int)imageType });
+
+            CLCalc.Program.Variable[] args = new CLCalc.Program.Variable[] {imagePixels, colorDepthPoints,
+                bodyIndexBytePtr, bodyIndexParticipantMap, v_bodyIndexesToShow, bodyIndexesCount, depthFrameSize, v_imageType};
+            int[] workers = new int[1] { colorImageSize };
+
+            MaskImage.Execute(args, workers);
+            imagePixels.ReadFromDeviceTo(imagePixelsArray);
+
+            Marshal.Copy(imagePixelsArray, 0, bitmapImage.BackBuffer, colorImageSize);
+    }
 
         /// <summary>
         /// Lock the bitmap image and update the displayed image source to refresh the screen

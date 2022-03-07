@@ -16,34 +16,34 @@ namespace TestSuite
         private StreamWriter streamWriter;
         private int colCount;
         private bool fileOpen = false;
-        private int writeCountSinceFlush = 0;
-        private int writesBeforeFlush;
+        private List<List<object>> dataToLog;
 
         /// <summary>
         /// Creates a Base Experiment logger
         /// </summary>
-        /// <param name="writesBeforeFlush">How many lines of data are written to buffer between flushes. Default: 1 (aka AutoFlush)</param>
-        public ExperimentLogger(int writesBeforeFlush = 1)
+        public ExperimentLogger()
         {
-            this.writesBeforeFlush = writesBeforeFlush;
+            dataToLog = new List<List<object>>();
         }
 
         /// <summary>
         /// Logs the given data in a comma separated manner to the associated file
         /// </summary>
         /// <param name="logData">List of data items to be logged, these will be joined by commas and converted to commas</param>
-        protected void LogData(List<object> logData)
+        private void LogData(List<object> logData)
         {
             if (fileOpen && logData.Count == colCount)
             {
                 string logString = string.Join(",", logData);
                 streamWriter.WriteLine(logString);
-                writeCountSinceFlush++;
+            }
+        }
 
-                if (writeCountSinceFlush == writesBeforeFlush)
-                {
-                    FlushData();
-                }
+        protected void PrepareToLogData(List<object> logData)
+        {
+            if (logData.Count == colCount)
+            {
+                dataToLog.Add(logData);
             }
         }
 
@@ -63,16 +63,17 @@ namespace TestSuite
             string filepath = new StringBuilder("Logs/").Append(path).Append("/").Append(filename).Append(".csv").ToString();
             colCount = headers.Count;
 
-            if (File.Exists(filepath))
-            {
-                File.Delete(filepath);
-            }
+            bool printHeaders = !File.Exists(filepath);
 
-            FileStream fs = File.OpenWrite(filepath);
+            FileStream fs = File.Open(filepath, FileMode.Append);
             streamWriter = new StreamWriter(fs);
             fileOpen = true;
 
-            LogData(headers);
+            if(printHeaders)
+            {
+                PrepareToLogData(headers);
+                FlushData();
+            }
         }
 
         /// <summary>
@@ -88,12 +89,25 @@ namespace TestSuite
         }
 
         /// <summary>
+        /// Flush data to the file after this experimental run, to be safe
+        /// </summary>
+        public void ExperimentRunFinished()
+        {
+            FlushData();
+        }
+
+        /// <summary>
         /// Force a flush of the data from buffer to the file
         /// </summary>
         protected void FlushData()
         {
+            foreach(List<object> dataLine in dataToLog)
+            {
+                LogData(dataLine);
+            }
             streamWriter.Flush();
-            writeCountSinceFlush = 0;
+
+            dataToLog.Clear();
         }
     }
 }

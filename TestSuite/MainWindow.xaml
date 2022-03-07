@@ -46,6 +46,10 @@
                 <TextBlock Text="Tilt Angle: " FontSize="24" Foreground="White"/>
                 <TextBlock Text="{Binding TiltAngle}" FontSize="24" Foreground="White"/>
             </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="FPS: " FontSize="24" Foreground="White"/>
+                <TextBlock Text="{Binding FPS}" FontSize="24" Foreground="White"/>
+            </StackPanel>
         </StackPanel>
         <StackPanel Orientation="Horizontal" Grid.Row="1" HorizontalAlignment="Right" Visibility="{Binding DebugMode, Converter={StaticResource DebugVisibilityConverter}}">
             <StackPanel Orientation="Vertical" Margin="0 0 10 0">

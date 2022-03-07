@@ -63,6 +63,11 @@ namespace TestSuite
             logger.SetExperimentCondition(targetPoint, conditionOffset);
         }
 
+        public void WriteLoggingToFile()
+        {
+            logger.ExperimentRunFinished();
+        }
+
         /// <summary>
         /// Stops the Logging for this participant, closes the file and flushes data
         /// </summary>

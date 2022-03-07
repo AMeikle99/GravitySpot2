@@ -107,6 +107,8 @@ namespace TestSuite
         private IDictionary<int, Tuple<Border, Image>> imageEffectMethodRenderable;
         private Bitmap imageEffectOriginalBitmap;
 
+        private ImageEffectRenderer imageEffectRenderer;
+
         private float FrameMargin
         {
             get => (currentRepresentationType == RepresentationType.MirrorImage ||
@@ -136,6 +138,7 @@ namespace TestSuite
             }
         }
 
+        public bool use_GPU = true;
         public bool isDebugMode = false;
         public double[] rotateAngles;
         // The Plane Representing what the Camera thinks is the floor
@@ -189,6 +192,7 @@ namespace TestSuite
             this.overlayCanvas = overlayCanvas;
             this.underlayCanvas = underlayCanvas;
             this.currentGuidingMethod = initialGuidingMethod;
+            this.imageEffectRenderer = new ImageEffectRenderer();
 
             InitialiseMethodRenderables();
         }
@@ -404,20 +408,27 @@ namespace TestSuite
                         imageEffectBorder.Visibility = Visibility.Visible;
                         imageEffectRenderable.Visibility = Visibility.Visible;
 
-                        // Copy Original Bitmap and apply pixelation
-                        // Effect Clamps to 1 when effect size is 1/25 OR 0.04
-                        Bitmap originalTmp = (Bitmap)imageEffectOriginalBitmap.Clone();
-                        int smallerSideSize = Math.Min(originalTmp.Width, originalTmp.Height);
-                        int effectSize = Math.Min(Math.Max((int)(25 * scaleFactor), 1), smallerSideSize / 3);
-                        ImageEffectRenderer.ApplyNormalPixelate(ref originalTmp, new System.Drawing.Size(effectSize, effectSize));
-                        
-                        // Create a BitmapSource from our pixelated bitmap
-                        // Since Pixelation creates larger block size, there is an unpixelated border
-                        // Crop this from width and height (remainder of effect size from Width/Height) I.e. 10 px wide with effect size of 3 has 3 pixels and 1 remainder in border
-                        BitmapSource pixelatedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmp.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                        pixelatedBitmap = new CroppedBitmap(pixelatedBitmap, new Int32Rect(0, 0, originalTmp.Width - originalTmp.Width % effectSize, originalTmp.Height - originalTmp.Height % effectSize));
+                        if (use_GPU)
+                        {
+                            imageEffectRenderer.ApplyPixelation_GPU(imageEffectRenderable, scaleFactor);
+                        }
+                        else
+                        {
+                            // Copy Original Bitmap and apply pixelation
+                            // Effect Clamps to 1 when effect size is 1/25 OR 0.04
+                            Bitmap originalTmp = (Bitmap)imageEffectOriginalBitmap.Clone();
+                            int smallerSideSize = Math.Min(originalTmp.Width, originalTmp.Height);
+                            int effectSize = Math.Min(Math.Max((int)(25 * scaleFactor), 1), smallerSideSize / 3);
+                            imageEffectRenderer.ApplyNormalPixelate(ref originalTmp, new System.Drawing.Size(effectSize, effectSize));
 
-                        imageEffectRenderable.Source = pixelatedBitmap;
+                            // Create a BitmapSource from our pixelated bitmap
+                            // Since Pixelation creates larger block size, there is an unpixelated border
+                            // Crop this from width and height (remainder of effect size from Width/Height) I.e. 10 px wide with effect size of 3 has 3 pixels and 1 remainder in border
+                            BitmapSource pixelatedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmp.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                            pixelatedBitmap = new CroppedBitmap(pixelatedBitmap, new Int32Rect(0, 0, originalTmp.Width - originalTmp.Width % effectSize, originalTmp.Height - originalTmp.Height % effectSize));
+
+                            imageEffectRenderable.Source = pixelatedBitmap;
+                        }
 
                         Canvas.SetLeft(imageEffectBorder, guideJointColorPoint.X - imageEffectBorder.Width / 2);
                         Canvas.SetTop(imageEffectBorder, guideJointColorPoint.Y - imageEffectBorder.Height / 2);
@@ -429,11 +440,18 @@ namespace TestSuite
                         imageDistortionEffectBorder.Visibility = Visibility.Visible;
                         imageDistortionEffectRenderable.Visibility = Visibility.Visible;
 
-                        Bitmap originalTmpDistort = (Bitmap)imageEffectOriginalBitmap.Clone();
-                        ImageEffectRenderer.ApplyDistortionParallel(ref originalTmpDistort, scaleFactor);
+                        if (use_GPU)
+                        {
+                            imageEffectRenderer.ApplyDistortion_GPU(imageDistortionEffectRenderable, scaleFactor);
+                        }
+                        else
+                        {
+                            Bitmap originalTmpDistort = (Bitmap)imageEffectOriginalBitmap.Clone();
+                            imageEffectRenderer.ApplyDistortionParallel(ref originalTmpDistort, scaleFactor);
 
-                        BitmapSource distortedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmpDistort.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                        imageDistortionEffectRenderable.Source = distortedBitmap;
+                            BitmapSource distortedBitmap = Imaging.CreateBitmapSourceFromHBitmap(originalTmpDistort.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                            imageDistortionEffectRenderable.Source = distortedBitmap;
+                        }
 
                         Canvas.SetLeft(imageDistortionEffectBorder, guideJointColorPoint.X - imageDistortionEffectBorder.Width / 2);
                         Canvas.SetTop(imageDistortionEffectBorder, guideJointColorPoint.Y - imageDistortionEffectBorder.Height / 2);

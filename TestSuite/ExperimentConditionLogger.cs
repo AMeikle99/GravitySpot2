@@ -28,7 +28,8 @@ namespace TestSuite
         /// <param name="conditionOffset">The offset (i.e which condition index) of the condition in this experiment</param>
         public void SetExperimentCondition(int conditionOffset)
         {
-            conditionID = MainWindow.experimentIDToConditionsMap[experimentID][conditionOffset];
+            int experimentsCount = MainWindow.experimentIDToConditionsMap.Keys.Count;
+            conditionID = MainWindow.experimentIDToConditionsMap[experimentID % experimentsCount][conditionOffset];
             representationType = MainWindow.idToConditionMap[conditionID].Item1;
             guidingMethod = MainWindow.idToConditionMap[conditionID].Item2;
         }
@@ -56,15 +57,7 @@ namespace TestSuite
             List<object> dataToLog = new List<object> { experimentID, conditionID, guidingMethod, representationType,
                                                         participant.GetParticipantID(), time_ms, distance_cm, finalPoint.X, finalPoint.Y, target.X, target.Y };
 
-            LogData(dataToLog);
-        }
-
-        /// <summary>
-        /// Flush data to the file after this experimental run, to be safe
-        /// </summary>
-        public void ExperimentRunFinished()
-        {
-            FlushData();
+            PrepareToLogData(dataToLog);
         }
     }
 }

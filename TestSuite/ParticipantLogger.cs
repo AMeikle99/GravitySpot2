@@ -34,7 +34,7 @@ namespace TestSuite
         /// </summary>
         /// <param name="participantID">ID of the participant</param>
         /// <param name="experimentID">ID of the experiment</param>
-        public ParticipantLogger(int participantID, int experimentID): base(60)
+        public ParticipantLogger(int participantID, int experimentID)
         {
             this.participantID = participantID;
             this.experimentID = experimentID;
@@ -51,7 +51,8 @@ namespace TestSuite
         {
             this.targetPoint = targetPoint;
 
-            conditionID = MainWindow.experimentIDToConditionsMap[experimentID][conditionOffset];
+            int experimentsCount = MainWindow.experimentIDToConditionsMap.Keys.Count;
+            conditionID = MainWindow.experimentIDToConditionsMap[experimentID % experimentsCount][conditionOffset];
             representationType = MainWindow.idToConditionMap[conditionID].Item1;
             guidingMethod = MainWindow.idToConditionMap[conditionID].Item2;
         }
@@ -67,7 +68,7 @@ namespace TestSuite
             double timestamp = now.Subtract(timeAtLoggingStart).TotalMilliseconds;
             List<object> dataToLog = new List<object> { participantID, experimentID, conditionID, guidingMethod, representationType,
                                                         currentPosition.X, currentPosition.Y, targetPoint.X, targetPoint.Y, adjustedPosition.X, adjustedPosition.Y, timestamp};
-            LogData(dataToLog);
+            PrepareToLogData(dataToLog);
         }
     }
 }

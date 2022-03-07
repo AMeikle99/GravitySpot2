@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,6 +17,7 @@ using System.Windows.Shapes;
 
 using Microsoft.Kinect;
 using SharpDX.XInput;
+using OpenCLTemplate;
 
 namespace TestSuite
 {
@@ -131,6 +133,7 @@ namespace TestSuite
 
         // Logs the Experimental Condition Results
         private ExperimentConditionLogger conditionLogger = new ExperimentConditionLogger();
+        private LastConditionLogger lastConditionLogger = new LastConditionLogger();
 
         // Represents the Kinect Device, used to gather data on Persons in View
         private KinectSensor kinectSensor;
@@ -211,6 +214,9 @@ namespace TestSuite
         private double controllerTime;
         private double bodyFinalDistance;
         private double tiltAngle;
+        private int fps;
+        private int framesProcessed = 0;
+        private Timer frameTimer;
 
         #region PublicViewModel
         public int NextParticipantID
@@ -298,6 +304,19 @@ namespace TestSuite
                 {
                     tiltAngle = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("TiltAngle"));
+                }
+            }
+        }
+
+        public int FPS
+        {
+            get => fps;
+            set
+            {
+                if (fps != value)
+                {
+                    fps = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("FPS"));
                 }
             }
         }
@@ -479,6 +498,15 @@ namespace TestSuite
 
             testParticipants = new List<TestParticipant>();
             bodyIndexToParticipantMap = new Dictionary<int, int>();
+            frameTimer = new Timer((i) =>
+            {
+                FPS = framesProcessed;
+                framesProcessed = 0;
+            }, null, 0, 1000);
+
+            CLCalc.InitCL();
+            CLCalc.Program.Compile(new string[] { GPUInitialization.maskedBodyCode, GPUInitialization.distortImageCode });
+
         }
 
         #region WindowEventHandlers
@@ -549,6 +577,14 @@ namespace TestSuite
                 case Key.R:
                     if (IsDebugState()) GenerateNewTargetPoints();
                     break;
+                //Enable/Disable GPU processing for Images
+                case Key.G:
+                    if (mirrorImageRenderer != null)
+                    {
+                        mirrorImageRenderer.usingGPU = !mirrorImageRenderer.usingGPU;
+                        guidingMethodRenderer.use_GPU = !guidingMethodRenderer.use_GPU;
+                    }
+                    break;
 
                 // Enable/Disable Debug
                 case Key.D:
@@ -600,6 +636,15 @@ namespace TestSuite
                         CurrentExperimentID = newExperimentID;
                     }
                     break;
+                // Set Condition Offset
+                case Key.C:
+                    string newConditionOffsetStr = (string)PromptDialog.Dialog.Prompt("Enter new Condition Offset [0...14]", "New Condition Offset");
+                    int newConditionOffset;
+                    if (int.TryParse(newConditionOffsetStr, out newConditionOffset))
+                    {
+                        CurrentConditionOffset = newConditionOffset;
+                    }
+                    break;
                 // Set Next Participant ID
                 case Key.P:
                     string newNextParticipantIDStr = (string)PromptDialog.Dialog.Prompt("Enter new Next Participant ID [1...]", "New Participant ID");
@@ -609,6 +654,7 @@ namespace TestSuite
 
                 // Exit Application
                 case Key.Q:
+                    lastConditionLogger.CloseLog();
                     Application.Current.Shutdown();
                     break;
                 default:
@@ -621,8 +667,10 @@ namespace TestSuite
         private void MainWindow_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
             MultiSourceFrame multiSourceFrame = e.FrameReference.AcquireFrame();
+            
 
-            if (multiSourceFrame == null)
+            if (multiSourceFrame == null || guidingMethodRenderer == null 
+                || skeletonRenderer == null || mirrorImageRenderer == null)
             {
                 return;
             }
@@ -836,6 +884,8 @@ namespace TestSuite
                 // Render the Guiding Method currently selected
                 RenderGuidingMethod(allBodies);
             }
+
+            framesProcessed += 1;
         }
         #endregion
 
@@ -989,6 +1039,12 @@ namespace TestSuite
                 case ExperimentState.ConditionInProgress:
                     ResetForNextCondition();
 
+                    foreach(TestParticipant participant in testParticipants)
+                    {
+                        participant.WriteLoggingToFile();
+                    }
+                    conditionLogger.ExperimentRunFinished();
+
                     // Last Condition Complete, End Experiment. Otherwise display wait message
                     int experimentIDCounts = experimentIDToConditionsMap.Count;
                     if (CurrentConditionOffset == experimentIDToConditionsMap[CurrentExperimentID % experimentIDCounts].Length)
@@ -1085,6 +1141,7 @@ namespace TestSuite
         {
             GenerateNewTargetPoints();
             conditionLogger.SetExperimentCondition(CurrentConditionOffset);
+            lastConditionLogger.LogCondition(CurrentExperimentID, CurrentConditionOffset, NextParticipantID-userCountForExperiment);
             SetExperimentConditions(CurrentExperimentID, CurrentConditionOffset++);
            
             CurrentExperimentState = ExperimentState.ConditionInProgress;

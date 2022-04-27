@@ -107,7 +107,7 @@ namespace TestSuite
                 kinectSensor.CoordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthBuffer.UnderlyingBuffer, depthBufferSize, colorToDepthPoints);
                 colorFrame.CopyConvertedFrameDataToIntPtr(bitmapImage.BackBuffer, (uint)colorToDepthPoints.Length * BytesPerPixel, ColorImageFormat.Bgra);
 
-                if (usingGPU)
+                if (!usingGPU)
                 {
                     UpdateMaskedBodies_GPU(depthWidth, depthHeight, bodyIndexBuffer, bodyIndexesToShow, imageType, bodyIndexToParticipantMap);
                 }
